@@ -19,6 +19,7 @@ using BetterGenshinImpact.Service;
 using BetterGenshinImpact.Service.Interface;
 using BetterGenshinImpact.Service.Notification;
 using BetterGenshinImpact.Service.Notifier;
+using BetterGenshinImpact.Service.Remote;
 using BetterGenshinImpact.View;
 using BetterGenshinImpact.View.Pages;
 using BetterGenshinImpact.ViewModel;
@@ -85,6 +86,7 @@ public partial class App : Application
                         retainedFileTimeLimit: TimeSpan.FromDays(21))
                     .WriteTo.Console(outputTemplate: 
                         "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+                    .WriteTo.Sink(new LogRelaySink(LogEventLevel.Information))
                     .MinimumLevel.Debug()
                     .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
                     .MinimumLevel.Override("Microsoft.Hosting.Lifetime", LogEventLevel.Warning);
@@ -148,6 +150,14 @@ public partial class App : Application
                 services.AddHostedService(sp => sp.GetRequiredService<NotificationService>());
                 services.AddSingleton<NotifierManager>();
                 services.AddSingleton<IScriptService, ScriptService>();
+                services.AddSingleton<IAiLogSink, NullAiLogSink>();
+                services.AddSingleton<WebRemoteService>();
+                services.AddHostedService(sp => sp.GetRequiredService<WebRemoteService>());
+                services.AddSingleton<IMcpRequestHandler, McpRequestHandler>();
+                services.AddSingleton<McpService>();
+                services.AddHostedService(sp => sp.GetRequiredService<McpService>());
+                services.AddSingleton<AiLogRelayService>();
+                services.AddHostedService(sp => sp.GetRequiredService<AiLogRelayService>());
                 services.AddSingleton<HutaoNamedPipe>();
                 services.AddSingleton<BgiOnnxFactory>();
                 services.AddSingleton<OcrFactory>();

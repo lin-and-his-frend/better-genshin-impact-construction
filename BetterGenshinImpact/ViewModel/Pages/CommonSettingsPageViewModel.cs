@@ -247,6 +247,13 @@ public partial class CommonSettingsPageViewModel : ViewModel
     }
 
     [RelayCommand]
+    private void GenerateClusterApiToken()
+    {
+        Config.WebRemoteConfig.ClusterApiToken = WebRemoteConfig.CreateRandomToken();
+        ThemedMessageBox.Information("已生成新的集群 API Token。");
+    }
+
+    [RelayCommand]
     public void OnSwitchTakenScreenshotEnabled()
     {
     }

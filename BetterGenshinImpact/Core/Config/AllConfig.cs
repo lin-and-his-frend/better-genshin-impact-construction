@@ -103,6 +103,16 @@ public partial class AllConfig : ObservableObject
     public CommonConfig CommonConfig { get; set; } = new();
 
     /// <summary>
+    ///     Web 远程控制配置
+    /// </summary>
+    public WebRemoteConfig WebRemoteConfig { get; set; } = new();
+
+    /// <summary>
+    ///     MCP 接口配置
+    /// </summary>
+    public McpConfig McpConfig { get; set; } = new();
+
+    /// <summary>
     ///     原神启动配置
     /// </summary>
     public GenshinStartConfig GenshinStartConfig { get; set; } = new();
@@ -249,6 +259,8 @@ public partial class AllConfig : ObservableObject
         PropertyChanged += OnAnyPropertyChanged;
         MaskWindowConfig.PropertyChanged += OnAnyPropertyChanged;
         CommonConfig.PropertyChanged += OnAnyPropertyChanged;
+        WebRemoteConfig.PropertyChanged += OnAnyPropertyChanged;
+        McpConfig.PropertyChanged += OnAnyPropertyChanged;
         GenshinStartConfig.PropertyChanged += OnAnyPropertyChanged;
         NotificationConfig.PropertyChanged += OnAnyPropertyChanged;
         NotificationConfig.PropertyChanged += OnNotificationPropertyChanged;

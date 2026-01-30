@@ -1,0 +1,1774 @@
+
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BetterGI Web 控制台</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+    :root {
+      color-scheme: dark;
+      --bg: #0b1220;
+      --bg-2: #0f1726;
+      --panel: #141f31;
+      --panel-2: #0f1726;
+      --line: #233042;
+      --text: #e5edf7;
+      --muted: #8fa3b8;
+      --accent: #18c2d8;
+      --accent-2: #f4a21d;
+      --danger: #ef4444;
+      --ok: #22c55e;
+      --warn: #fecaca;
+      --shadow: 0 18px 40px rgba(2, 6, 23, 0.45);
+      --input-bg: #0b1322;
+      --input-line: #233042;
+      --card-top: rgba(255,255,255,0.04);
+      --scanline-opacity: 0.35;
+      --bg-grad-1: rgba(24,194,216,0.18);
+      --bg-grad-2: rgba(244,162,29,0.14);
+      --bg-grad-3: #0a0f1a;
+      --header-glow-1: rgba(24,194,216,0.1);
+      --header-glow-2: rgba(244,162,29,0.1);
+      --btn-bg: rgba(24,194,216,0.16);
+      --btn-border: rgba(24,194,216,0.4);
+      --btn-primary-bg: linear-gradient(135deg, rgba(24,194,216,0.6), rgba(244,162,29,0.6));
+      --btn-primary-glow: 0 0 20px rgba(24,194,216,0.2);
+      --btn-danger-bg: rgba(239,68,68,0.2);
+      --btn-danger-border: rgba(239,68,68,0.6);
+      --log-bg: #070b12;
+      --screen-bg: #0a0f18;
+      --section-bg: rgba(20,31,49,0.65);
+      --group-bg: rgba(15,23,38,0.8);
+      --toast-bg: rgba(15,23,38,0.9);
+    }
+    :root[data-theme="dark"] { color-scheme: dark; }
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --bg-2: #eef2f7;
+      --panel: #ffffff;
+      --panel-2: #f7f9fc;
+      --line: #d6dee8;
+      --text: #0f172a;
+      --muted: #475569;
+      --accent: #0ea5b7;
+      --accent-2: #f59e0b;
+      --warn: #b91c1c;
+      --shadow: 0 18px 40px rgba(15, 23, 42, 0.12);
+      --input-bg: #ffffff;
+      --input-line: #cbd5e1;
+      --card-top: rgba(15, 23, 42, 0.04);
+      --scanline-opacity: 0.12;
+      --bg-grad-1: rgba(14,165,183,0.12);
+      --bg-grad-2: rgba(245,158,11,0.12);
+      --bg-grad-3: #ffffff;
+      --header-glow-1: rgba(14,165,183,0.12);
+      --header-glow-2: rgba(245,158,11,0.12);
+      --btn-bg: rgba(14,165,183,0.12);
+      --btn-border: rgba(14,165,183,0.35);
+      --btn-primary-bg: linear-gradient(135deg, rgba(14,165,183,0.65), rgba(245,158,11,0.65));
+      --btn-primary-glow: 0 0 18px rgba(14,165,183,0.12);
+      --btn-danger-bg: rgba(239,68,68,0.12);
+      --btn-danger-border: rgba(239,68,68,0.35);
+      --log-bg: #f8fafc;
+      --screen-bg: #f1f5f9;
+      --section-bg: rgba(255,255,255,0.75);
+      --group-bg: rgba(248,250,252,0.95);
+      --toast-bg: rgba(255,255,255,0.92);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Space Grotesk", "Noto Sans SC", "Segoe UI", sans-serif;
+      background: radial-gradient(1200px 600px at 10% -20%, var(--bg-grad-1), transparent 60%),
+                  radial-gradient(1000px 500px at 110% -10%, var(--bg-grad-2), transparent 55%),
+                  linear-gradient(180deg, var(--bg-grad-3) 0%, var(--bg) 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .scanlines {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(180deg, rgba(255,255,255,0.04) 0, rgba(255,255,255,0.04) 1px, rgba(0,0,0,0) 2px, rgba(0,0,0,0) 4px);
+      mix-blend-mode: soft-light;
+      opacity: var(--scanline-opacity);
+      z-index: 1;
+    }
+    .container {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px;
+      position: relative;
+      z-index: 2;
+    }
+    header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      padding: 16px 20px;
+      border: 1px solid var(--line);
+      background: linear-gradient(135deg, var(--header-glow-1), var(--header-glow-2)), var(--panel);
+      box-shadow: var(--shadow);
+      border-radius: 16px;
+    }
+    .brand {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .brand h1 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .brand span {
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .status {
+      font-size: 14px;
+      color: var(--text);
+    }
+    .warning {
+      color: var(--warn);
+      font-size: 13px;
+      margin-top: 6px;
+    }
+    .network {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 4px;
+    }
+    .grid { display: grid; gap: 16px; }
+    .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .card {
+      background: linear-gradient(180deg, var(--card-top), rgba(255,255,255,0)), var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: var(--shadow);
+    }
+    .card h2, .card h3 {
+      margin: 0 0 12px 0;
+      font-size: 18px;
+      letter-spacing: 0.04em;
+    }
+    .muted { color: var(--muted); font-size: 13px; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    .btn {
+      border: none;
+      border-radius: 10px;
+      padding: 8px 14px;
+      background: var(--btn-bg);
+      color: var(--text);
+      cursor: pointer;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      box-shadow: inset 0 0 0 1px var(--btn-border);
+    }
+    .btn.primary {
+      background: var(--btn-primary-bg);
+      box-shadow: var(--btn-primary-glow);
+    }
+    .btn.danger {
+      background: var(--btn-danger-bg);
+      box-shadow: inset 0 0 0 1px var(--btn-danger-border);
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .toggle {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .toggle input { width: 16px; height: 16px; }
+    .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+    .field label { font-size: 13px; color: var(--muted); }
+    input, select, textarea {
+      background: var(--input-bg);
+      border: 1px solid var(--input-line);
+      color: var(--text);
+      padding: 8px 10px;
+      border-radius: 10px;
+      font-family: inherit;
+    }
+    textarea { min-height: 90px; resize: vertical; }
+    .mono { font-family: "JetBrains Mono", "Fira Code", monospace; }
+    .screen-wrap {
+      background: var(--screen-bg);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 8px;
+    }
+    #screenStream { width: 100%; border-radius: 8px; display: block; }
+    #logArea {
+      background: var(--log-bg);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 12px;
+      height: 240px;
+      overflow: auto;
+      font-family: "JetBrains Mono", monospace;
+      font-size: 12px;
+    }
+    details.section {
+      margin-top: 18px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: var(--section-bg);
+    }
+    details.section summary {
+      cursor: pointer;
+      padding: 14px 16px;
+      font-size: 16px;
+      font-weight: 600;
+      list-style: none;
+    }
+    details.section summary::-webkit-details-marker { display: none; }
+    .section-body { padding: 0 16px 16px 16px; }
+    .list { display: grid; gap: 8px; }
+    .group-item {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      background: var(--group-bg);
+    }
+    .group-item h4 { margin: 0 0 8px 0; font-size: 14px; }
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--toast-bg);
+      border: 1px solid var(--line);
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      color: var(--text);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+      z-index: 5;
+    }
+    .mode-switch {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .mode-switch select {
+      min-width: 110px;
+    }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+    .toast.show { opacity: 1; }
+    @media (max-width: 980px) {
+      .grid-2 { grid-template-columns: 1fr; }
+      .grid-3 { grid-template-columns: 1fr; }
+      header { flex-direction: column; align-items: flex-start; }
+    }
+    @media (max-width: 600px) {
+      .container { padding: 16px; }
+      .btn { width: 100%; justify-content: center; }
+      .row { gap: 8px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      * { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+<div class="scanlines"></div>
+<div class="toast" id="toast"></div>
+<div class="container">
+  <header>
+    <div class="brand">
+      <h1>BetterGI Web 控制台</h1>
+      <span>远程操控 · 全功能界面</span>
+    </div>
+    <div>
+      <div id="status" class="status">状态加载中...</div>
+      <div id="warning" class="warning"></div>
+      <div id="network" class="network"></div>
+    </div>
+    <div class="mode-switch">
+      <label for="themeSelect">显示模式</label>
+      <select id="themeSelect">
+        <option value="dark">暗黑</option>
+        <option value="light">明亮</option>
+      </select>
+    </div>
+  </header>
+
+  <section class="grid grid-2">
+    <div class="card">
+      <h2>运行控制</h2>
+      <div class="row">
+        <button class="btn primary" id="startGame">启动游戏</button>
+        <button class="btn danger" id="stopGame">停止游戏</button>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn" id="pauseTasks">暂停任务</button>
+        <button class="btn" id="resumeTasks">继续任务</button>
+        <button class="btn danger" id="cancelTasks">取消任务</button>
+      </div>
+      <div class="muted" style="margin-top:10px;">提示：若手机无法访问，请确认已开启局域网访问并放行防火墙端口。</div>
+    </div>
+
+    <div class="card">
+      <h2>实时画面</h2>
+      <div class="screen-wrap">
+        <img id="screenStream" alt="screen stream" src="/api/screen">
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn" id="refreshScreen">刷新</button>
+        <label class="toggle"><input type="checkbox" id="autoScreen">自动刷新(2秒)</label>
+      </div>
+      <div id="screenHint" class="muted" style="margin-top:6px;"></div>
+    </div>
+
+    <div class="card">
+      <h2>基础功能</h2>
+      <div class="grid grid-2">
+        <label class="toggle"><input type="checkbox" id="autoPick">自动拾取</label>
+        <label class="toggle"><input type="checkbox" id="autoSkip">自动跳过</label>
+        <label class="toggle"><input type="checkbox" id="autoFishing">自动钓鱼</label>
+        <label class="toggle"><input type="checkbox" id="autoCook">自动烹饪</label>
+        <label class="toggle"><input type="checkbox" id="autoEat">自动进食</label>
+        <label class="toggle"><input type="checkbox" id="quickTeleport">快捷传送</label>
+        <label class="toggle"><input type="checkbox" id="mapMask">地图遮罩</label>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>遮罩日志</h2>
+      <div class="row" style="margin-bottom:8px;">
+        <button class="btn" id="clearLogs">清空</button>
+      </div>
+      <pre id="logArea"></pre>
+    </div>
+  </section>
+
+  <details class="section" open>
+    <summary>全自动任务</summary>
+    <div class="section-body">
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>七圣召唤</h3>
+          <div class="field">
+            <label>策略名称</label>
+            <input id="tcgStrategy" list="tcgStrategies" placeholder="选择策略">
+          </div>
+          <div class="field">
+            <label>出手延迟(ms)</label>
+            <input id="tcgDelay" type="number" min="0">
+          </div>
+          <div class="row">
+            <button class="btn" id="tcgSave">保存设置</button>
+            <button class="btn primary" id="tcgRun">执行</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>伐木</h3>
+          <div class="field">
+            <label>轮数</label>
+            <input id="woodRound" type="number" min="1">
+          </div>
+          <div class="field">
+            <label>每日上限</label>
+            <input id="woodDaily" type="number" min="1">
+          </div>
+          <label class="toggle"><input type="checkbox" id="woodWonderland">启用奇境刷新</label>
+          <div class="field">
+            <label>Z键后延迟(ms)</label>
+            <input id="woodAfterZ" type="number" min="0">
+          </div>
+          <label class="toggle"><input type="checkbox" id="woodOcr">木材数量OCR</label>
+          <div class="row">
+            <button class="btn" id="woodSave">保存设置</button>
+            <button class="btn primary" id="woodRun">执行</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>自动战斗</h3>
+          <div class="field">
+            <label>策略名称</label>
+            <input id="fightStrategy" list="fightStrategies" placeholder="选择策略">
+          </div>
+          <div class="field">
+            <label>队伍名称</label>
+            <input id="fightTeam" placeholder="队伍名称">
+          </div>
+          <label class="toggle"><input type="checkbox" id="fightFinishDetect">战斗结束检测</label>
+          <div class="field">
+            <label>技能调度(CD)</label>
+            <input id="fightActionScheduler" placeholder="ActionSchedulerByCd">
+          </div>
+          <div class="field">
+            <label>精英掉落拾取模式</label>
+            <input id="fightOnlyPickEliteDrops" placeholder="OnlyPickEliteDropsMode">
+          </div>
+          <label class="toggle"><input type="checkbox" id="fightPickDrops">战斗后拾取</label>
+          <div class="field">
+            <label>拾取等待秒数</label>
+            <input id="fightPickSeconds" type="number" min="0">
+          </div>
+          <div class="row">
+            <button class="btn" id="fightSave">保存设置</button>
+            <button class="btn primary" id="fightRun">执行</button>
+          </div>
+        </div>
+
+        <div class="card" style="grid-column: span 2;">
+          <h3>自动秘境</h3>
+          <div class="grid grid-3">
+            <div class="field">
+              <label>策略名称</label>
+              <input id="domainStrategy" list="fightStrategies" placeholder="战斗策略">
+            </div>
+            <div class="field">
+              <label>队伍名称</label>
+              <input id="domainParty">
+            </div>
+            <div class="field">
+              <label>秘境名称</label>
+              <input id="domainName" list="domainNameList">
+            </div>
+            <div class="field">
+              <label>刷取轮数</label>
+              <input id="domainRound" type="number" min="1">
+            </div>
+            <div class="field">
+              <label>周日选择值</label>
+              <input id="domainSunday">
+            </div>
+          </div>
+          <div class="grid grid-2">
+            <label class="toggle"><input type="checkbox" id="domainAutoArtifact">结束后自动分解</label>
+            <label class="toggle"><input type="checkbox" id="domainSpecifyResin">指定树脂使用</label>
+            <div class="field">
+              <label>树脂优先顺序(逗号分隔)</label>
+              <input id="domainResinPriority" placeholder="浓缩树脂, 原粹树脂, 须臾树脂">
+            </div>
+            <div class="field">
+              <label>原粹树脂次数</label>
+              <input id="domainOriginalResin" type="number" min="0">
+            </div>
+            <div class="field">
+              <label>浓缩树脂次数</label>
+              <input id="domainCondensedResin" type="number" min="0">
+            </div>
+            <div class="field">
+              <label>须臾树脂次数</label>
+              <input id="domainTransientResin" type="number" min="0">
+            </div>
+            <div class="field">
+              <label>脆弱树脂次数</label>
+              <input id="domainFragileResin" type="number" min="0">
+            </div>
+          </div>
+          <div class="row">
+            <button class="btn" id="domainSave">保存设置</button>
+            <button class="btn primary" id="domainRun">执行</button>
+          </div>
+        </div>
+        <div class="card" style="grid-column: span 2;">
+          <h3>深境螺旋/深渊攻势</h3>
+          <div class="grid grid-3">
+            <div class="field">
+              <label>策略名称</label>
+              <input id="stygianStrategy" list="fightStrategies" placeholder="战斗策略">
+            </div>
+            <div class="field">
+              <label>Boss 数量</label>
+              <input id="stygianBossNum" type="number" min="1" max="3">
+            </div>
+            <div class="field">
+              <label>队伍名称</label>
+              <input id="stygianTeam">
+            </div>
+          </div>
+          <div class="grid grid-2">
+            <label class="toggle"><input type="checkbox" id="stygianAutoArtifact">结束后自动分解</label>
+            <label class="toggle"><input type="checkbox" id="stygianSpecifyResin">指定树脂使用</label>
+            <div class="field">
+              <label>树脂优先顺序(逗号分隔)</label>
+              <input id="stygianResinPriority" placeholder="浓缩树脂, 原粹树脂, 须臾树脂">
+            </div>
+            <div class="field">
+              <label>原粹树脂次数</label>
+              <input id="stygianOriginalResin" type="number" min="0">
+            </div>
+            <div class="field">
+              <label>浓缩树脂次数</label>
+              <input id="stygianCondensedResin" type="number" min="0">
+            </div>
+            <div class="field">
+              <label>须臾树脂次数</label>
+              <input id="stygianTransientResin" type="number" min="0">
+            </div>
+            <div class="field">
+              <label>脆弱树脂次数</label>
+              <input id="stygianFragileResin" type="number" min="0">
+            </div>
+          </div>
+          <div class="row">
+            <button class="btn" id="stygianSave">保存设置</button>
+            <button class="btn primary" id="stygianRun">执行</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>自动钓鱼</h3>
+          <label class="toggle"><input type="checkbox" id="fishingEnabled">启用自动钓鱼</label>
+          <label class="toggle"><input type="checkbox" id="fishingAutoThrow">自动抛竿</label>
+          <div class="field">
+            <label>抛竿超时(秒)</label>
+            <input id="fishingAutoThrowTimeout" type="number" min="1">
+          </div>
+          <div class="field">
+            <label>全流程超时(秒)</label>
+            <input id="fishingWholeTimeout" type="number" min="1">
+          </div>
+          <div class="field">
+            <label>钓鱼时段</label>
+            <select id="fishingPolicy"></select>
+          </div>
+          <div class="field">
+            <label>Torch 路径</label>
+            <input id="fishingTorchPath" placeholder="torch.dll 路径">
+          </div>
+          <label class="toggle"><input type="checkbox" id="fishingSaveScreenshot">保存按键截图</label>
+          <div class="row">
+            <button class="btn" id="fishingSave">保存设置</button>
+            <button class="btn primary" id="fishingRun">执行</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>音游</h3>
+          <label class="toggle"><input type="checkbox" id="musicMustCanorus">强制大音天籁</label>
+          <div class="field">
+            <label>乐曲级别</label>
+            <input id="musicLevel" placeholder="音乐关卡级别">
+          </div>
+          <div class="row">
+            <button class="btn" id="musicSave">保存设置</button>
+            <button class="btn primary" id="musicRun">执行千音雅集</button>
+            <button class="btn" id="albumRun">执行相册任务</button>
+          </div>
+        </div>
+
+        <div class="card" style="grid-column: span 2;">
+          <h3>圣遗物自动分解</h3>
+          <div class="grid grid-3">
+            <div class="field">
+              <label>套装过滤</label>
+              <input id="artifactSetFilter" placeholder="套装名关键字">
+            </div>
+            <div class="field">
+              <label>最大星级</label>
+              <input id="artifactMaxStar" placeholder="1~5">
+            </div>
+            <div class="field">
+              <label>最大扫描数量</label>
+              <input id="artifactMaxNum" type="number" min="1">
+            </div>
+            <div class="field">
+              <label>识别失败策略</label>
+              <select id="artifactPolicy"></select>
+            </div>
+          </div>
+          <div class="field">
+            <label>脚本(JavaScript)</label>
+            <textarea id="artifactJavaScript" class="mono" placeholder="输入筛选脚本"></textarea>
+          </div>
+          <div class="row">
+            <button class="btn" id="artifactSave">保存设置</button>
+            <button class="btn primary" id="artifactRun">执行</button>
+          </div>
+        </div>
+
+        <div class="card" style="grid-column: span 2;">
+          <h3>网格图标</h3>
+          <div class="grid grid-3">
+            <div class="field">
+              <label>网格名称</label>
+              <input id="gridName" list="gridNameList">
+            </div>
+            <label class="toggle"><input type="checkbox" id="gridStarSuffix">星级后缀</label>
+            <label class="toggle"><input type="checkbox" id="gridLvSuffix">等级后缀</label>
+            <div class="field">
+              <label>最大获取数量</label>
+              <input id="gridMaxNum" type="number" min="1">
+            </div>
+          </div>
+          <div class="row">
+            <button class="btn" id="gridSave">保存设置</button>
+            <button class="btn primary" id="gridRun">获取图标</button>
+            <button class="btn" id="gridAccuracy">精度测试</button>
+          </div>
+        </div>
+
+        <div class="card" style="grid-column: span 2;">
+          <h3>兑换码</h3>
+          <div class="field">
+            <label>一行一个兑换码</label>
+            <textarea id="redeemCodes" class="mono"></textarea>
+          </div>
+          <div class="row">
+            <button class="btn primary" id="redeemRun">执行兑换</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <details class="section">
+    <summary>调度器</summary>
+    <div class="section-body">
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>运行配置组</h3>
+          <div id="scriptGroups" class="list"></div>
+          <div class="row">
+            <button class="btn" id="refreshGroups">刷新</button>
+            <button class="btn primary" id="runGroups">执行选中组</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>组管理</h3>
+          <div class="field">
+            <label>新建组</label>
+            <div class="row">
+              <input id="newGroupName" placeholder="新组名称">
+              <button class="btn" id="createGroup">新建</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>重命名</label>
+            <div class="row">
+              <input id="renameGroupOld" placeholder="旧名称">
+              <input id="renameGroupNew" placeholder="新名称">
+              <button class="btn" id="renameGroup">重命名</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>删除组</label>
+            <div class="row">
+              <input id="deleteGroupName" placeholder="组名称">
+              <button class="btn danger" id="deleteGroup">删除</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>脚本库</h3>
+          <div class="field">
+            <label>选择组</label>
+            <select id="groupSelect"></select>
+          </div>
+          <div class="grid grid-2">
+            <div>
+              <div class="muted">JS 脚本</div>
+              <div id="libraryJs" class="list"></div>
+            </div>
+            <div>
+              <div class="muted">键鼠脚本</div>
+              <div id="libraryKeyMouse" class="list"></div>
+            </div>
+          </div>
+          <div class="field" style="margin-top:8px;">
+            <div class="muted">地图追踪</div>
+            <div id="libraryPathing" class="list"></div>
+          </div>
+          <div class="row">
+            <button class="btn primary" id="addScripts">加入选中脚本</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>组内容</h3>
+          <div id="groupDetail" class="list"></div>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <details class="section">
+    <summary>一条龙</summary>
+    <div class="section-body">
+      <div class="card">
+        <div class="row">
+          <select id="dragonConfigSelect"></select>
+          <button class="btn" id="dragonRefresh">刷新</button>
+          <button class="btn primary" id="dragonRun">执行</button>
+          <button class="btn" id="dragonSave">保存配置</button>
+        </div>
+        <div class="muted" style="margin-top:8px;">说明：保存后将写入本地配置文件，不需要手动编辑 JSON。</div>
+      </div>
+
+      <div class="grid grid-2" style="margin-top:16px;">
+        <div class="card">
+          <h3>基础配置</h3>
+          <div class="field">
+            <label>配置名称</label>
+            <input id="dragonName">
+          </div>
+          <div class="field">
+            <label>合成台国家</label>
+            <input id="dragonCraftingCountry" list="countryList">
+          </div>
+          <div class="field">
+            <label>冒险者协会国家</label>
+            <input id="dragonGuildCountry" list="countryList">
+          </div>
+          <div class="field">
+            <label>自动战斗队伍名称</label>
+            <input id="dragonPartyName">
+          </div>
+          <div class="field">
+            <label>秘境名称</label>
+            <input id="dragonDomainName">
+          </div>
+          <label class="toggle"><input type="checkbox" id="dragonWeeklyEnabled">启用每周秘境配置</label>
+          <div class="field">
+            <label>完成后操作</label>
+            <select id="dragonCompletionAction">
+              <option value="">无</option>
+              <option value="关闭游戏">关闭游戏</option>
+              <option value="关闭游戏和软件">关闭游戏和软件</option>
+              <option value="关机">关机</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>每日奖励 / 树脂</h3>
+          <div class="field">
+            <label>每日奖励队伍名称</label>
+            <input id="dragonDailyRewardParty">
+          </div>
+          <div class="field">
+            <label>合成浓缩保留原粹树脂</label>
+            <input id="dragonMinResinToKeep" type="number" min="0">
+          </div>
+          <div class="field">
+            <label>周日-每日奖励好感数量</label>
+            <input id="dragonSundayEvery">
+          </div>
+          <div class="field">
+            <label>周日-秘境好感数量</label>
+            <input id="dragonSundaySelected">
+          </div>
+          <div class="field">
+            <label>尘歌壶传送方式</label>
+            <select id="dragonSereniteaTp">
+              <option value="地图传送">地图传送</option>
+              <option value="尘歌壶道具">尘歌壶道具</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>洞天购买物品(每行一个)</label>
+            <textarea id="dragonSecretTreasure" class="mono"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h3>每周秘境配置</h3>
+        <div class="grid grid-3">
+          <div class="field"><label>周一队伍</label><input id="dragonMondayParty"></div>
+          <div class="field"><label>周一秘境</label><input id="dragonMondayDomain"></div>
+          <div class="field"><label>周二队伍</label><input id="dragonTuesdayParty"></div>
+          <div class="field"><label>周二秘境</label><input id="dragonTuesdayDomain"></div>
+          <div class="field"><label>周三队伍</label><input id="dragonWednesdayParty"></div>
+          <div class="field"><label>周三秘境</label><input id="dragonWednesdayDomain"></div>
+          <div class="field"><label>周四队伍</label><input id="dragonThursdayParty"></div>
+          <div class="field"><label>周四秘境</label><input id="dragonThursdayDomain"></div>
+          <div class="field"><label>周五队伍</label><input id="dragonFridayParty"></div>
+          <div class="field"><label>周五秘境</label><input id="dragonFridayDomain"></div>
+          <div class="field"><label>周六队伍</label><input id="dragonSaturdayParty"></div>
+          <div class="field"><label>周六秘境</label><input id="dragonSaturdayDomain"></div>
+          <div class="field"><label>周日队伍</label><input id="dragonSundayParty"></div>
+          <div class="field"><label>周日秘境</label><input id="dragonSundayDomain"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h3>任务开关</h3>
+        <div id="dragonTasks" class="grid grid-3"></div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h3>新建配置</h3>
+        <div class="row">
+          <input id="dragonCloneName" placeholder="新配置名称">
+          <button class="btn" id="dragonClone">复制当前为新配置</button>
+        </div>
+      </div>
+    </div>
+  </details>
+</div>
+
+<datalist id="fightStrategies"></datalist>
+<datalist id="tcgStrategies"></datalist>
+<datalist id="domainNameList"></datalist>
+<datalist id="gridNameList"></datalist>
+<datalist id="countryList">
+  <option value="蒙德"></option>
+  <option value="璃月"></option>
+  <option value="稻妻"></option>
+  <option value="须弥"></option>
+  <option value="枫丹"></option>
+  <option value="纳塔"></option>
+  <option value="至冬"></option>
+</datalist>
+
+<script>
+  const statusEl = document.getElementById("status");
+  const warningEl = document.getElementById("warning");
+  const networkEl = document.getElementById("network");
+  const themeSelect = document.getElementById("themeSelect");
+  const themeStorageKey = "bettergi-web-theme";
+  const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+
+  function applyTheme(mode) {
+    document.documentElement.dataset.theme = mode;
+    if (themeSelect) themeSelect.value = mode;
+  }
+
+  const storedTheme = localStorage.getItem(themeStorageKey);
+  const initialTheme = storedTheme || (prefersDark ? "dark" : "light");
+  applyTheme(initialTheme);
+
+  if (themeSelect) {
+    themeSelect.addEventListener("change", () => {
+      const mode = themeSelect.value;
+      localStorage.setItem(themeStorageKey, mode);
+      applyTheme(mode);
+    });
+  }
+  const toastEl = document.getElementById("toast");
+  const screenEl = document.getElementById("screenStream");
+  const screenHint = document.getElementById("screenHint");
+  const logEl = document.getElementById("logArea");
+  const groupSelect = document.getElementById("groupSelect");
+  const scriptGroupsEl = document.getElementById("scriptGroups");
+  const groupDetailEl = document.getElementById("groupDetail");
+  const dragonTasksEl = document.getElementById("dragonTasks");
+  let currentPort = null;
+  let logConnected = false;
+  let screenTimer = null;
+  let currentDragonConfig = null;
+
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    setTimeout(() => toastEl.classList.remove("show"), 2000);
+  }
+
+  async function fetchJson(url, options) {
+    const res = await fetch(url, options);
+    if (!res.ok) throw new Error(res.statusText);
+    return await res.json();
+  }
+
+  async function postJson(url, body) {
+    return await fetchJson(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+  }
+
+  function fillDatalist(id, items) {
+    const list = document.getElementById(id);
+    if (!list) return;
+    list.innerHTML = "";
+    (items || []).forEach(item => {
+      const opt = document.createElement("option");
+      opt.value = item;
+      list.appendChild(opt);
+    });
+  }
+
+  function fillSelect(id, items) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = "";
+    (items || []).forEach(item => {
+      const opt = document.createElement("option");
+      opt.value = item;
+      opt.textContent = item;
+      el.appendChild(opt);
+    });
+  }
+
+  function parseList(text) {
+    return (text || "").split(/[,，\n]+/).map(x => x.trim()).filter(Boolean);
+  }
+
+  function parseLines(text) {
+    return (text || "").split(/\r?\n/).map(x => x.trim()).filter(Boolean);
+  }
+
+  function numValue(id, fallback) {
+    const val = Number(document.getElementById(id).value);
+    return Number.isFinite(val) ? val : fallback;
+  }
+
+  async function refreshStatus() {
+    try {
+      const data = await fetchJson("/api/status");
+      const match = (data.listenPrefix || "").match(/:(\d+)/);
+      currentPort = match ? match[1] : null;
+      statusEl.textContent = `版本 ${data.version} | ${data.serverTime} | 游戏已启动: ${data.isInitialized} | 暂停: ${data.isSuspended} | LAN 启用: ${data.lanEnabled} | LAN 有效: ${data.lanActive} | 监听: ${data.listenPrefix || "-"}`;
+      warningEl.textContent = data.warning ? `提示：${data.warning}` : "";
+      if (!data.screenStreamEnabled) {
+        screenHint.textContent = "屏幕传输未开启，请在本地设置中启用";
+      } else if (!data.isInitialized) {
+        screenHint.textContent = "游戏未启动";
+      } else {
+        screenHint.textContent = "";
+      }
+      if (!logConnected && data.logStreamEnabled) {
+        connectLogs();
+      }
+      if (!data.logStreamEnabled) {
+        logEl.textContent = "日志推送未开启";
+      }
+      return data;
+    } catch (err) {
+      statusEl.textContent = "状态获取失败";
+      warningEl.textContent = "";
+      return null;
+    }
+  }
+
+  async function refreshNetwork() {
+    try {
+      const data = await fetchJson("/api/network");
+      if (!data.addresses || data.addresses.length === 0) {
+        networkEl.textContent = "未获取到局域网地址";
+        return;
+      }
+      const list = data.addresses.map(ip => currentPort ? `http://${ip}:${currentPort}/` : ip);
+      networkEl.textContent = `局域网地址：${list.join(", ")}`;
+    } catch (err) {
+      networkEl.textContent = "局域网地址获取失败";
+    }
+  }
+
+  async function refreshConfig() {
+    try {
+      const data = await fetchJson("/api/config/basic");
+      document.getElementById("autoPick").checked = !!data.autoPick;
+      document.getElementById("autoSkip").checked = !!data.autoSkip;
+      document.getElementById("autoFishing").checked = !!data.autoFishing;
+      document.getElementById("autoCook").checked = !!data.autoCook;
+      document.getElementById("autoEat").checked = !!data.autoEat;
+      document.getElementById("quickTeleport").checked = !!data.quickTeleport;
+      document.getElementById("mapMask").checked = !!data.mapMask;
+    } catch (err) {
+    }
+  }
+
+  async function patchBasic(key, value) {
+    try {
+      await postJson("/api/config/basic", { [key]: value });
+    } catch (err) {
+    }
+  }
+
+  document.getElementById("autoPick").addEventListener("change", e => patchBasic("autoPick", e.target.checked));
+  document.getElementById("autoSkip").addEventListener("change", e => patchBasic("autoSkip", e.target.checked));
+  document.getElementById("autoFishing").addEventListener("change", e => patchBasic("autoFishing", e.target.checked));
+  document.getElementById("autoCook").addEventListener("change", e => patchBasic("autoCook", e.target.checked));
+  document.getElementById("autoEat").addEventListener("change", e => patchBasic("autoEat", e.target.checked));
+  document.getElementById("quickTeleport").addEventListener("change", e => patchBasic("quickTeleport", e.target.checked));
+  document.getElementById("mapMask").addEventListener("change", e => patchBasic("mapMask", e.target.checked));
+
+  function appendLog(line) {
+    const time = new Date(line.timestamp).toLocaleTimeString();
+    const text = `[${time}] [${line.level}] ${line.message}`;
+    logEl.textContent += text + "\n";
+    const lines = logEl.textContent.split("\n");
+    if (lines.length > 400) {
+      logEl.textContent = lines.slice(-350).join("\n");
+    }
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function connectLogs() {
+    logConnected = true;
+    const es = new EventSource("/api/logs/stream");
+    es.addEventListener("log", (event) => {
+      try {
+        const line = JSON.parse(event.data);
+        appendLog(line);
+      } catch (err) {
+      }
+    });
+  }
+
+  function refreshScreen() {
+    screenEl.src = `/api/screen?ts=${Date.now()}`;
+  }
+
+  document.getElementById("refreshScreen").addEventListener("click", refreshScreen);
+  document.getElementById("autoScreen").addEventListener("change", (e) => {
+    if (screenTimer) {
+      clearInterval(screenTimer);
+      screenTimer = null;
+    }
+    if (e.target.checked) {
+      screenTimer = setInterval(refreshScreen, 2000);
+    }
+  });
+
+  document.getElementById("clearLogs").addEventListener("click", () => { logEl.textContent = ""; });
+
+  document.getElementById("startGame").addEventListener("click", () => fetchJson("/api/game/start").then(() => toast("已发送启动指令")));
+  document.getElementById("stopGame").addEventListener("click", () => fetchJson("/api/game/stop").then(() => toast("已发送停止指令")));
+  document.getElementById("pauseTasks").addEventListener("click", () => fetchJson("/api/tasks/pause", { method: "POST" }).then(() => toast("任务已暂停")));
+  document.getElementById("resumeTasks").addEventListener("click", () => fetchJson("/api/tasks/resume", { method: "POST" }).then(() => toast("任务已继续")));
+  document.getElementById("cancelTasks").addEventListener("click", () => fetchJson("/api/tasks/cancel", { method: "POST" }).then(() => toast("任务已取消")));
+
+  async function loadOptions() {
+    try {
+      const [fight, tcg, domains, grids, fishingPolicies, recognitionPolicies] = await Promise.all([
+        fetchJson("/api/strategies/auto-fight"),
+        fetchJson("/api/strategies/tcg"),
+        fetchJson("/api/options/domain-names"),
+        fetchJson("/api/options/grid-names"),
+        fetchJson("/api/options/fishing-time-policy"),
+        fetchJson("/api/options/recognition-failure-policy")
+      ]);
+      fillDatalist("fightStrategies", fight);
+      fillDatalist("tcgStrategies", tcg);
+      fillDatalist("domainNameList", domains);
+      fillDatalist("gridNameList", grids);
+      fillSelect("fishingPolicy", fishingPolicies);
+      fillSelect("artifactPolicy", recognitionPolicies);
+    } catch (err) {
+    }
+  }
+  async function loadSettings() {
+    try {
+      const tcg = await fetchJson("/api/settings/auto-gi");
+      document.getElementById("tcgStrategy").value = tcg.strategyName || "";
+      document.getElementById("tcgDelay").value = tcg.sleepDelay ?? "";
+    } catch (err) {}
+    try {
+      const wood = await fetchJson("/api/settings/auto-wood");
+      document.getElementById("woodAfterZ").value = wood.afterZSleepDelay ?? "";
+      document.getElementById("woodOcr").checked = !!wood.woodCountOcrEnabled;
+      document.getElementById("woodWonderland").checked = !!wood.useWonderlandRefresh;
+    } catch (err) {}
+    try {
+      const fight = await fetchJson("/api/settings/auto-fight");
+      document.getElementById("fightStrategy").value = fight.strategyName || "";
+      document.getElementById("fightTeam").value = fight.teamNames || "";
+      document.getElementById("fightFinishDetect").checked = !!fight.fightFinishDetectEnabled;
+      document.getElementById("fightActionScheduler").value = fight.actionSchedulerByCd || "";
+      document.getElementById("fightOnlyPickEliteDrops").value = fight.onlyPickEliteDropsMode || "";
+      document.getElementById("fightPickDrops").checked = !!fight.pickDropsAfterFightEnabled;
+      document.getElementById("fightPickSeconds").value = fight.pickDropsAfterFightSeconds ?? "";
+    } catch (err) {}
+    try {
+      const domain = await fetchJson("/api/settings/auto-domain");
+      document.getElementById("domainStrategy").value = domain.strategyName || "";
+      document.getElementById("domainParty").value = domain.partyName || "";
+      document.getElementById("domainName").value = domain.domainName || "";
+      document.getElementById("domainSunday").value = domain.sundaySelectedValue || "";
+      document.getElementById("domainAutoArtifact").checked = !!domain.autoArtifactSalvage;
+      document.getElementById("domainSpecifyResin").checked = !!domain.specifyResinUse;
+      document.getElementById("domainResinPriority").value = (domain.resinPriorityList || []).join(", ");
+      document.getElementById("domainOriginalResin").value = domain.originalResinUseCount ?? "";
+      document.getElementById("domainCondensedResin").value = domain.condensedResinUseCount ?? "";
+      document.getElementById("domainTransientResin").value = domain.transientResinUseCount ?? "";
+      document.getElementById("domainFragileResin").value = domain.fragileResinUseCount ?? "";
+    } catch (err) {}
+    try {
+      const stygian = await fetchJson("/api/settings/auto-stygian");
+      document.getElementById("stygianStrategy").value = stygian.strategyName || "";
+      document.getElementById("stygianBossNum").value = stygian.bossNum ?? "";
+      document.getElementById("stygianTeam").value = stygian.fightTeamName || "";
+      document.getElementById("stygianAutoArtifact").checked = !!stygian.autoArtifactSalvage;
+      document.getElementById("stygianSpecifyResin").checked = !!stygian.specifyResinUse;
+      document.getElementById("stygianResinPriority").value = (stygian.resinPriorityList || []).join(", ");
+      document.getElementById("stygianOriginalResin").value = stygian.originalResinUseCount ?? "";
+      document.getElementById("stygianCondensedResin").value = stygian.condensedResinUseCount ?? "";
+      document.getElementById("stygianTransientResin").value = stygian.transientResinUseCount ?? "";
+      document.getElementById("stygianFragileResin").value = stygian.fragileResinUseCount ?? "";
+    } catch (err) {}
+    try {
+      const fishing = await fetchJson("/api/settings/auto-fishing");
+      document.getElementById("fishingEnabled").checked = !!fishing.enabled;
+      document.getElementById("fishingAutoThrow").checked = !!fishing.autoThrowRodEnabled;
+      document.getElementById("fishingAutoThrowTimeout").value = fishing.autoThrowRodTimeOut ?? "";
+      document.getElementById("fishingWholeTimeout").value = fishing.wholeProcessTimeoutSeconds ?? "";
+      document.getElementById("fishingPolicy").value = fishing.fishingTimePolicy || "";
+      document.getElementById("fishingTorchPath").value = fishing.torchDllFullPath || "";
+    } catch (err) {}
+    try {
+      const music = await fetchJson("/api/settings/auto-music");
+      document.getElementById("musicMustCanorus").checked = !!music.mustCanorusLevel;
+      document.getElementById("musicLevel").value = music.musicLevel || "";
+    } catch (err) {}
+    try {
+      const artifact = await fetchJson("/api/settings/auto-artifact");
+      document.getElementById("artifactSetFilter").value = artifact.artifactSetFilter || "";
+      document.getElementById("artifactMaxStar").value = artifact.maxArtifactStar || "";
+      document.getElementById("artifactMaxNum").value = artifact.maxNumToCheck ?? "";
+      document.getElementById("artifactPolicy").value = artifact.recognitionFailurePolicy || "";
+      document.getElementById("artifactJavaScript").value = artifact.javaScript || "";
+    } catch (err) {}
+    try {
+      const grid = await fetchJson("/api/settings/grid-icons");
+      document.getElementById("gridName").value = grid.gridName || "";
+      document.getElementById("gridStarSuffix").checked = !!grid.starAsSuffix;
+      document.getElementById("gridLvSuffix").checked = !!grid.lvAsSuffix;
+      document.getElementById("gridMaxNum").value = grid.maxNumToGet ?? "";
+    } catch (err) {}
+  }
+
+  async function runTask(task, params) {
+    try {
+      await postJson("/api/tasks/run", { task, params: params || {} });
+      toast("任务已启动");
+    } catch (err) {
+      toast("任务启动失败");
+    }
+  }
+
+  document.getElementById("tcgSave").addEventListener("click", async () => {
+    await postJson("/api/settings/auto-gi", {
+      strategyName: document.getElementById("tcgStrategy").value.trim(),
+      sleepDelay: numValue("tcgDelay", 0)
+    });
+    toast("已保存");
+  });
+  document.getElementById("tcgRun").addEventListener("click", () => {
+    runTask("auto_gi", {
+      strategyName: document.getElementById("tcgStrategy").value.trim(),
+      sleepDelay: numValue("tcgDelay", 0)
+    });
+  });
+
+  document.getElementById("woodSave").addEventListener("click", async () => {
+    await postJson("/api/settings/auto-wood", {
+      afterZSleepDelay: numValue("woodAfterZ", 0),
+      woodCountOcrEnabled: document.getElementById("woodOcr").checked,
+      useWonderlandRefresh: document.getElementById("woodWonderland").checked
+    });
+    toast("已保存");
+  });
+  document.getElementById("woodRun").addEventListener("click", () => {
+    runTask("auto_wood", {
+      roundNum: numValue("woodRound", 1),
+      dailyMaxCount: numValue("woodDaily", 2000),
+      useWonderlandRefresh: document.getElementById("woodWonderland").checked
+    });
+  });
+
+  document.getElementById("fightSave").addEventListener("click", async () => {
+    await postJson("/api/settings/auto-fight", {
+      strategyName: document.getElementById("fightStrategy").value.trim(),
+      teamNames: document.getElementById("fightTeam").value.trim(),
+      fightFinishDetectEnabled: document.getElementById("fightFinishDetect").checked,
+      actionSchedulerByCd: document.getElementById("fightActionScheduler").value.trim(),
+      onlyPickEliteDropsMode: document.getElementById("fightOnlyPickEliteDrops").value.trim(),
+      pickDropsAfterFightEnabled: document.getElementById("fightPickDrops").checked,
+      pickDropsAfterFightSeconds: numValue("fightPickSeconds", 0)
+    });
+    toast("已保存");
+  });
+  document.getElementById("fightRun").addEventListener("click", () => {
+    runTask("auto_fight", {
+      strategyName: document.getElementById("fightStrategy").value.trim(),
+      teamNames: document.getElementById("fightTeam").value.trim()
+    });
+  });
+
+  document.getElementById("domainSave").addEventListener("click", async () => {
+    await postJson("/api/settings/auto-domain", {
+      strategyName: document.getElementById("domainStrategy").value.trim(),
+      partyName: document.getElementById("domainParty").value.trim(),
+      domainName: document.getElementById("domainName").value.trim(),
+      sundaySelectedValue: document.getElementById("domainSunday").value.trim(),
+      autoArtifactSalvage: document.getElementById("domainAutoArtifact").checked,
+      specifyResinUse: document.getElementById("domainSpecifyResin").checked,
+      resinPriorityList: parseList(document.getElementById("domainResinPriority").value),
+      originalResinUseCount: numValue("domainOriginalResin", 0),
+      condensedResinUseCount: numValue("domainCondensedResin", 0),
+      transientResinUseCount: numValue("domainTransientResin", 0),
+      fragileResinUseCount: numValue("domainFragileResin", 0)
+    });
+    toast("已保存");
+  });
+  document.getElementById("domainRun").addEventListener("click", () => {
+    runTask("auto_domain", {
+      strategyName: document.getElementById("domainStrategy").value.trim(),
+      partyName: document.getElementById("domainParty").value.trim(),
+      domainName: document.getElementById("domainName").value.trim(),
+      sundaySelectedValue: document.getElementById("domainSunday").value.trim(),
+      roundNum: numValue("domainRound", 1)
+    });
+  });
+
+  document.getElementById("stygianSave").addEventListener("click", async () => {
+    await postJson("/api/settings/auto-stygian", {
+      strategyName: document.getElementById("stygianStrategy").value.trim(),
+      bossNum: numValue("stygianBossNum", 1),
+      fightTeamName: document.getElementById("stygianTeam").value.trim(),
+      autoArtifactSalvage: document.getElementById("stygianAutoArtifact").checked,
+      specifyResinUse: document.getElementById("stygianSpecifyResin").checked,
+      resinPriorityList: parseList(document.getElementById("stygianResinPriority").value),
+      originalResinUseCount: numValue("stygianOriginalResin", 0),
+      condensedResinUseCount: numValue("stygianCondensedResin", 0),
+      transientResinUseCount: numValue("stygianTransientResin", 0),
+      fragileResinUseCount: numValue("stygianFragileResin", 0)
+    });
+    toast("已保存");
+  });
+  document.getElementById("stygianRun").addEventListener("click", () => {
+    runTask("auto_stygian", {
+      strategyName: document.getElementById("stygianStrategy").value.trim(),
+      bossNum: numValue("stygianBossNum", 1),
+      fightTeamName: document.getElementById("stygianTeam").value.trim()
+    });
+  });
+
+  document.getElementById("fishingSave").addEventListener("click", async () => {
+    await postJson("/api/settings/auto-fishing", {
+      enabled: document.getElementById("fishingEnabled").checked,
+      autoThrowRodEnabled: document.getElementById("fishingAutoThrow").checked,
+      autoThrowRodTimeOut: numValue("fishingAutoThrowTimeout", 1),
+      wholeProcessTimeoutSeconds: numValue("fishingWholeTimeout", 1),
+      fishingTimePolicy: document.getElementById("fishingPolicy").value,
+      torchDllFullPath: document.getElementById("fishingTorchPath").value.trim()
+    });
+    toast("已保存");
+  });
+  document.getElementById("fishingRun").addEventListener("click", () => {
+    runTask("auto_fishing", {
+      saveScreenshotOnKeyTick: document.getElementById("fishingSaveScreenshot").checked
+    });
+  });
+
+  document.getElementById("musicSave").addEventListener("click", async () => {
+    await postJson("/api/settings/auto-music", {
+      mustCanorusLevel: document.getElementById("musicMustCanorus").checked,
+      musicLevel: document.getElementById("musicLevel").value.trim()
+    });
+    toast("已保存");
+  });
+  document.getElementById("musicRun").addEventListener("click", () => runTask("auto_music"));
+  document.getElementById("albumRun").addEventListener("click", () => runTask("auto_album"));
+
+  document.getElementById("artifactSave").addEventListener("click", async () => {
+    await postJson("/api/settings/auto-artifact", {
+      artifactSetFilter: document.getElementById("artifactSetFilter").value.trim(),
+      maxArtifactStar: document.getElementById("artifactMaxStar").value.trim(),
+      maxNumToCheck: numValue("artifactMaxNum", 1),
+      recognitionFailurePolicy: document.getElementById("artifactPolicy").value,
+      javaScript: document.getElementById("artifactJavaScript").value
+    });
+    toast("已保存");
+  });
+  document.getElementById("artifactRun").addEventListener("click", () => runTask("auto_artifact_salvage"));
+
+  document.getElementById("gridSave").addEventListener("click", async () => {
+    await postJson("/api/settings/grid-icons", {
+      gridName: document.getElementById("gridName").value.trim(),
+      starAsSuffix: document.getElementById("gridStarSuffix").checked,
+      lvAsSuffix: document.getElementById("gridLvSuffix").checked,
+      maxNumToGet: numValue("gridMaxNum", 1)
+    });
+    toast("已保存");
+  });
+  document.getElementById("gridRun").addEventListener("click", async () => {
+    await postJson("/api/settings/grid-icons", {
+      gridName: document.getElementById("gridName").value.trim(),
+      starAsSuffix: document.getElementById("gridStarSuffix").checked,
+      lvAsSuffix: document.getElementById("gridLvSuffix").checked,
+      maxNumToGet: numValue("gridMaxNum", 1)
+    });
+    runTask("get_grid_icons");
+  });
+  document.getElementById("gridAccuracy").addEventListener("click", () => runTask("grid_icons_accuracy"));
+
+  document.getElementById("redeemRun").addEventListener("click", () => {
+    const codes = parseLines(document.getElementById("redeemCodes").value);
+    runTask("auto_redeem_code", { codes });
+  });
+  async function refreshGroups() {
+    scriptGroupsEl.innerHTML = "";
+    groupSelect.innerHTML = "";
+    try {
+      const data = await fetchJson("/api/scripts/groups");
+      if (!Array.isArray(data) || data.length === 0) {
+        scriptGroupsEl.innerHTML = '<div class="muted">暂无配置组</div>';
+        return;
+      }
+      data.forEach(group => {
+        const label = document.createElement("label");
+        label.className = "toggle";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = group.name;
+        const text = document.createElement("span");
+        text.textContent = `${group.name} (${group.projectCount || 0})`;
+        label.appendChild(checkbox);
+        label.appendChild(text);
+        scriptGroupsEl.appendChild(label);
+        const option = document.createElement("option");
+        option.value = group.name;
+        option.textContent = group.name;
+        groupSelect.appendChild(option);
+      });
+      if (groupSelect.value) {
+        await loadGroupDetail(groupSelect.value);
+      }
+    } catch (err) {
+      scriptGroupsEl.innerHTML = '<div class="muted">加载失败</div>';
+    }
+  }
+
+  async function runSelectedGroups() {
+    const checks = scriptGroupsEl.querySelectorAll("input[type=checkbox]:checked");
+    if (!checks.length) return;
+    const names = Array.from(checks).map(el => el.value);
+    await postJson("/api/scripts/run", { names });
+    toast("已启动配置组");
+  }
+
+  const statusOptions = [
+    { value: "Enabled", label: "启用" },
+    { value: "Disabled", label: "禁用" }
+  ];
+  const scheduleOptions = [
+    { value: "Daily", label: "每日" },
+    { value: "EveryTwoDays", label: "间隔两天" },
+    { value: "Monday", label: "每周一" },
+    { value: "Tuesday", label: "每周二" },
+    { value: "Wednesday", label: "每周三" },
+    { value: "Thursday", label: "每周四" },
+    { value: "Friday", label: "每周五" },
+    { value: "Saturday", label: "每周六" },
+    { value: "Sunday", label: "每周日" }
+  ];
+
+  async function loadGroupDetail(name) {
+    if (!name) return;
+    try {
+      const detail = await fetchJson(`/api/scripts/group/detail?name=${encodeURIComponent(name)}`);
+      renderGroupDetail(detail);
+    } catch (err) {
+      groupDetailEl.innerHTML = '<div class="muted">加载失败</div>';
+    }
+  }
+
+  function renderGroupDetail(detail) {
+    groupDetailEl.innerHTML = "";
+    if (!detail || !detail.projects || detail.projects.length === 0) {
+      groupDetailEl.innerHTML = '<div class="muted">暂无脚本</div>';
+      return;
+    }
+    detail.projects.forEach(item => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "group-item";
+      const title = document.createElement("h4");
+      title.textContent = `#${item.index} ${item.name}`;
+      wrapper.appendChild(title);
+
+      const typeTag = document.createElement("div");
+      typeTag.className = "muted";
+      typeTag.textContent = `${item.type} ${item.folderName ? "| " + item.folderName : ""}`;
+      wrapper.appendChild(typeTag);
+
+      const statusField = document.createElement("div");
+      statusField.className = "field";
+      const statusLabel = document.createElement("label");
+      statusLabel.textContent = "状态";
+      const statusSelect = document.createElement("select");
+      statusOptions.forEach(opt => {
+        const option = document.createElement("option");
+        option.value = opt.value;
+        option.textContent = opt.label;
+        statusSelect.appendChild(option);
+      });
+      statusSelect.value = item.status;
+      statusField.appendChild(statusLabel);
+      statusField.appendChild(statusSelect);
+
+      const scheduleField = document.createElement("div");
+      scheduleField.className = "field";
+      const scheduleLabel = document.createElement("label");
+      scheduleLabel.textContent = "执行周期";
+      const scheduleSelect = document.createElement("select");
+      scheduleOptions.forEach(opt => {
+        const option = document.createElement("option");
+        option.value = opt.value;
+        option.textContent = opt.label;
+        scheduleSelect.appendChild(option);
+      });
+      const scheduleInput = document.createElement("input");
+      scheduleInput.placeholder = "自定义 Cron";
+      const known = scheduleOptions.some(opt => opt.value === item.schedule);
+      scheduleSelect.value = known ? item.schedule : "";
+      scheduleInput.value = item.schedule || "";
+      scheduleSelect.addEventListener("change", () => {
+        scheduleInput.value = scheduleSelect.value;
+      });
+      scheduleField.appendChild(scheduleLabel);
+      scheduleField.appendChild(scheduleSelect);
+      scheduleField.appendChild(scheduleInput);
+
+      const runNumField = document.createElement("div");
+      runNumField.className = "field";
+      const runNumLabel = document.createElement("label");
+      runNumLabel.textContent = "执行次数";
+      const runNumInput = document.createElement("input");
+      runNumInput.type = "number";
+      runNumInput.min = "0";
+      runNumInput.value = item.runNum;
+      runNumField.appendChild(runNumLabel);
+      runNumField.appendChild(runNumInput);
+
+      const controls = document.createElement("div");
+      controls.className = "row";
+      const saveBtn = document.createElement("button");
+      saveBtn.className = "btn";
+      saveBtn.textContent = "保存";
+      saveBtn.addEventListener("click", async () => {
+        await postJson("/api/scripts/group/update-item", {
+          name: detail.name,
+          index: item.index,
+          status: statusSelect.value,
+          schedule: scheduleInput.value,
+          runNum: Number(runNumInput.value || 0)
+        });
+        toast("已保存");
+      });
+      const upBtn = document.createElement("button");
+      upBtn.className = "btn";
+      upBtn.textContent = "上移";
+      upBtn.addEventListener("click", async () => {
+        await postJson("/api/scripts/group/reorder", {
+          name: detail.name,
+          fromIndex: item.index,
+          toIndex: Math.max(0, item.index - 1)
+        });
+        await loadGroupDetail(detail.name);
+      });
+      const downBtn = document.createElement("button");
+      downBtn.className = "btn";
+      downBtn.textContent = "下移";
+      downBtn.addEventListener("click", async () => {
+        await postJson("/api/scripts/group/reorder", {
+          name: detail.name,
+          fromIndex: item.index,
+          toIndex: item.index + 1
+        });
+        await loadGroupDetail(detail.name);
+      });
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "btn danger";
+      removeBtn.textContent = "移除";
+      removeBtn.addEventListener("click", async () => {
+        await postJson("/api/scripts/group/remove-item", { name: detail.name, index: item.index });
+        await loadGroupDetail(detail.name);
+      });
+      controls.appendChild(saveBtn);
+      controls.appendChild(upBtn);
+      controls.appendChild(downBtn);
+      controls.appendChild(removeBtn);
+
+      wrapper.appendChild(statusField);
+      wrapper.appendChild(scheduleField);
+      wrapper.appendChild(runNumField);
+      wrapper.appendChild(controls);
+      groupDetailEl.appendChild(wrapper);
+    });
+  }
+
+  async function loadLibrary() {
+    try {
+      const data = await fetchJson("/api/scripts/library");
+      const jsList = document.getElementById("libraryJs");
+      const kmList = document.getElementById("libraryKeyMouse");
+      const pathList = document.getElementById("libraryPathing");
+      jsList.innerHTML = "";
+      kmList.innerHTML = "";
+      pathList.innerHTML = "";
+      (data.js || []).forEach(item => {
+        const label = document.createElement("label");
+        label.className = "toggle";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.dataset.folder = item.folder || "";
+        input.value = item.folder || item.name;
+        const text = document.createElement("span");
+        text.textContent = item.name;
+        label.appendChild(input);
+        label.appendChild(text);
+        jsList.appendChild(label);
+      });
+      (data.keymouse || []).forEach(item => {
+        const label = document.createElement("label");
+        label.className = "toggle";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.value = item.name;
+        const text = document.createElement("span");
+        text.textContent = item.name;
+        label.appendChild(input);
+        label.appendChild(text);
+        kmList.appendChild(label);
+      });
+      (data.pathing || []).forEach(item => {
+        const label = document.createElement("label");
+        label.className = "toggle";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.dataset.folder = item.folder || "";
+        input.value = item.name;
+        const text = document.createElement("span");
+        text.textContent = item.folder ? `${item.folder}/${item.name}` : item.name;
+        label.appendChild(input);
+        label.appendChild(text);
+        pathList.appendChild(label);
+      });
+    } catch (err) {
+    }
+  }
+
+  document.getElementById("refreshGroups").addEventListener("click", refreshGroups);
+  document.getElementById("runGroups").addEventListener("click", runSelectedGroups);
+  groupSelect.addEventListener("change", () => loadGroupDetail(groupSelect.value));
+
+  document.getElementById("createGroup").addEventListener("click", async () => {
+    const name = document.getElementById("newGroupName").value.trim();
+    if (!name) return;
+    await postJson("/api/scripts/group/create", { name });
+    document.getElementById("newGroupName").value = "";
+    await refreshGroups();
+  });
+  document.getElementById("renameGroup").addEventListener("click", async () => {
+    const oldName = document.getElementById("renameGroupOld").value.trim();
+    const newName = document.getElementById("renameGroupNew").value.trim();
+    if (!oldName || !newName) return;
+    await postJson("/api/scripts/group/rename", { oldName, newName });
+    document.getElementById("renameGroupOld").value = "";
+    document.getElementById("renameGroupNew").value = "";
+    await refreshGroups();
+  });
+  document.getElementById("deleteGroup").addEventListener("click", async () => {
+    const name = document.getElementById("deleteGroupName").value.trim();
+    if (!name) return;
+    await postJson("/api/scripts/group/delete", { name });
+    document.getElementById("deleteGroupName").value = "";
+    await refreshGroups();
+  });
+
+  document.getElementById("addScripts").addEventListener("click", async () => {
+    const name = groupSelect.value;
+    if (!name) return;
+    const jsFolders = Array.from(document.querySelectorAll("#libraryJs input:checked")).map(el => el.dataset.folder || el.value);
+    const keyMouseNames = Array.from(document.querySelectorAll("#libraryKeyMouse input:checked")).map(el => el.value);
+    const pathing = Array.from(document.querySelectorAll("#libraryPathing input:checked")).map(el => ({ name: el.value, folder: el.dataset.folder || "" }));
+    await postJson("/api/scripts/group/add-items", { name, jsFolders, keyMouseNames, pathing });
+    toast("已添加脚本");
+    await loadGroupDetail(name);
+  });
+
+  async function refreshDragonConfigs() {
+    try {
+      const data = await fetchJson("/api/one-dragon/configs");
+      const select = document.getElementById("dragonConfigSelect");
+      select.innerHTML = "";
+      (data.configs || []).forEach(name => {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        select.appendChild(option);
+      });
+      if (data.selected) {
+        select.value = data.selected;
+      }
+      await loadDragonConfig(select.value);
+    } catch (err) {
+    }
+  }
+
+  function fillDragonForm(config) {
+    if (!config) return;
+    document.getElementById("dragonName").value = config.Name || "";
+    document.getElementById("dragonCraftingCountry").value = config.CraftingBenchCountry || "";
+    document.getElementById("dragonGuildCountry").value = config.AdventurersGuildCountry || "";
+    document.getElementById("dragonPartyName").value = config.PartyName || "";
+    document.getElementById("dragonDomainName").value = config.DomainName || "";
+    document.getElementById("dragonWeeklyEnabled").checked = !!config.WeeklyDomainEnabled;
+    document.getElementById("dragonDailyRewardParty").value = config.DailyRewardPartyName || "";
+    document.getElementById("dragonMinResinToKeep").value = config.MinResinToKeep ?? 0;
+    document.getElementById("dragonSundayEvery").value = config.SundayEverySelectedValue || "";
+    document.getElementById("dragonSundaySelected").value = config.SundaySelectedValue || "";
+    document.getElementById("dragonSereniteaTp").value = config.SereniteaPotTpType || "地图传送";
+    document.getElementById("dragonSecretTreasure").value = (config.SecretTreasureObjects || []).join("\n");
+    document.getElementById("dragonCompletionAction").value = config.CompletionAction || "";
+    document.getElementById("dragonMondayParty").value = config.MondayPartyName || "";
+    document.getElementById("dragonMondayDomain").value = config.MondayDomainName || "";
+    document.getElementById("dragonTuesdayParty").value = config.TuesdayPartyName || "";
+    document.getElementById("dragonTuesdayDomain").value = config.TuesdayDomainName || "";
+    document.getElementById("dragonWednesdayParty").value = config.WednesdayPartyName || "";
+    document.getElementById("dragonWednesdayDomain").value = config.WednesdayDomainName || "";
+    document.getElementById("dragonThursdayParty").value = config.ThursdayPartyName || "";
+    document.getElementById("dragonThursdayDomain").value = config.ThursdayDomainName || "";
+    document.getElementById("dragonFridayParty").value = config.FridayPartyName || "";
+    document.getElementById("dragonFridayDomain").value = config.FridayDomainName || "";
+    document.getElementById("dragonSaturdayParty").value = config.SaturdayPartyName || "";
+    document.getElementById("dragonSaturdayDomain").value = config.SaturdayDomainName || "";
+    document.getElementById("dragonSundayParty").value = config.SundayPartyName || "";
+    document.getElementById("dragonSundayDomain").value = config.SundayDomainName || "";
+    renderDragonTasks(config.TaskEnabledList || {});
+  }
+
+  function renderDragonTasks(list) {
+    dragonTasksEl.innerHTML = "";
+    const keys = Object.keys(list || {});
+    if (keys.length === 0) {
+      dragonTasksEl.innerHTML = '<div class="muted">当前配置没有任务</div>';
+      return;
+    }
+    keys.forEach(name => {
+      const label = document.createElement("label");
+      label.className = "toggle";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = !!list[name];
+      checkbox.addEventListener("change", () => {
+        if (!currentDragonConfig) return;
+        if (!currentDragonConfig.TaskEnabledList) currentDragonConfig.TaskEnabledList = {};
+        currentDragonConfig.TaskEnabledList[name] = checkbox.checked;
+      });
+      const text = document.createElement("span");
+      text.textContent = name;
+      label.appendChild(checkbox);
+      label.appendChild(text);
+      dragonTasksEl.appendChild(label);
+    });
+  }
+
+  async function loadDragonConfig(name) {
+    if (!name) return;
+    try {
+      const res = await fetch(`/api/one-dragon/config?name=${encodeURIComponent(name)}`);
+      const jsonText = await res.text();
+      const config = JSON.parse(jsonText);
+      currentDragonConfig = config;
+      fillDragonForm(config);
+    } catch (err) {
+    }
+  }
+
+  function buildDragonConfig() {
+    const cfg = currentDragonConfig || {};
+    cfg.Name = document.getElementById("dragonName").value.trim();
+    cfg.CraftingBenchCountry = document.getElementById("dragonCraftingCountry").value.trim();
+    cfg.AdventurersGuildCountry = document.getElementById("dragonGuildCountry").value.trim();
+    cfg.PartyName = document.getElementById("dragonPartyName").value.trim();
+    cfg.DomainName = document.getElementById("dragonDomainName").value.trim();
+    cfg.WeeklyDomainEnabled = document.getElementById("dragonWeeklyEnabled").checked;
+    cfg.DailyRewardPartyName = document.getElementById("dragonDailyRewardParty").value.trim();
+    cfg.MinResinToKeep = numValue("dragonMinResinToKeep", 0);
+    cfg.SundayEverySelectedValue = document.getElementById("dragonSundayEvery").value.trim();
+    cfg.SundaySelectedValue = document.getElementById("dragonSundaySelected").value.trim();
+    cfg.SereniteaPotTpType = document.getElementById("dragonSereniteaTp").value;
+    cfg.SecretTreasureObjects = parseLines(document.getElementById("dragonSecretTreasure").value);
+    cfg.CompletionAction = document.getElementById("dragonCompletionAction").value;
+    cfg.MondayPartyName = document.getElementById("dragonMondayParty").value.trim();
+    cfg.MondayDomainName = document.getElementById("dragonMondayDomain").value.trim();
+    cfg.TuesdayPartyName = document.getElementById("dragonTuesdayParty").value.trim();
+    cfg.TuesdayDomainName = document.getElementById("dragonTuesdayDomain").value.trim();
+    cfg.WednesdayPartyName = document.getElementById("dragonWednesdayParty").value.trim();
+    cfg.WednesdayDomainName = document.getElementById("dragonWednesdayDomain").value.trim();
+    cfg.ThursdayPartyName = document.getElementById("dragonThursdayParty").value.trim();
+    cfg.ThursdayDomainName = document.getElementById("dragonThursdayDomain").value.trim();
+    cfg.FridayPartyName = document.getElementById("dragonFridayParty").value.trim();
+    cfg.FridayDomainName = document.getElementById("dragonFridayDomain").value.trim();
+    cfg.SaturdayPartyName = document.getElementById("dragonSaturdayParty").value.trim();
+    cfg.SaturdayDomainName = document.getElementById("dragonSaturdayDomain").value.trim();
+    cfg.SundayPartyName = document.getElementById("dragonSundayParty").value.trim();
+    cfg.SundayDomainName = document.getElementById("dragonSundayDomain").value.trim();
+    if (!cfg.TaskEnabledList) cfg.TaskEnabledList = {};
+    return cfg;
+  }
+
+  document.getElementById("dragonRefresh").addEventListener("click", refreshDragonConfigs);
+  document.getElementById("dragonSave").addEventListener("click", async () => {
+    const payload = buildDragonConfig();
+    await fetch("/api/one-dragon/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    toast("已保存配置");
+    await refreshDragonConfigs();
+  });
+  document.getElementById("dragonRun").addEventListener("click", async () => {
+    const name = document.getElementById("dragonConfigSelect").value;
+    await postJson("/api/one-dragon/run", { name });
+    toast("一条龙已启动");
+  });
+  document.getElementById("dragonConfigSelect").addEventListener("change", async (e) => {
+    await postJson("/api/one-dragon/select", { name: e.target.value });
+    await loadDragonConfig(e.target.value);
+  });
+  document.getElementById("dragonClone").addEventListener("click", async () => {
+    const name = document.getElementById("dragonCloneName").value.trim();
+    if (!name) return;
+    const payload = buildDragonConfig();
+    payload.Name = name;
+    await fetch("/api/one-dragon/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    document.getElementById("dragonCloneName").value = "";
+    await refreshDragonConfigs();
+  });
+
+  refreshStatus();
+  refreshNetwork();
+  refreshConfig();
+  loadOptions();
+  loadSettings();
+  refreshGroups();
+  loadLibrary();
+  refreshDragonConfigs();
+  refreshScreen();
+
+  setInterval(async () => {
+    await refreshStatus();
+    refreshScreen();
+  }, 5000);
+  setInterval(refreshNetwork, 15000);
+</script>
+</body>
+</html>

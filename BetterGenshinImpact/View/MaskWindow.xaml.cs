@@ -41,8 +41,8 @@ public partial class MaskWindow : Window
     private static MaskWindow? _maskWindow;
 
     private static readonly Typeface _typeface;
+    private static readonly Typeface _fgiTypeface;
 
-    private nint _hWnd;
     private MaskWindowViewModel? _viewModel;
 
     private IRichTextBox? _richTextBox;
@@ -64,6 +64,15 @@ public partial class MaskWindow : Window
             _typeface = new FontFamily("Microsoft Yahei UI").GetTypefaces().First();
         }
 
+        try
+        {
+            _fgiTypeface = new FontFamily(new Uri("pack://application:,,,/"), "./Resources/Fonts/Fgi-Regular.ttf#Fgi-Regular").GetTypefaces().First();
+        }
+        catch
+        {
+            _fgiTypeface = _typeface;
+        }
+
         DefaultStyleKeyProperty.OverrideMetadata(typeof(MaskWindow), new FrameworkPropertyMetadata(typeof(MaskWindow)));
     }
 
@@ -74,6 +83,11 @@ public partial class MaskWindow : Window
             throw new Exception("MaskWindow 未初始化");
         }
 
+        return _maskWindow;
+    }
+    
+    public static MaskWindow? InstanceNullable()
+    {
         return _maskWindow;
     }
 
@@ -89,14 +103,7 @@ public partial class MaskWindow : Window
 
     public void RefreshPosition()
     {
-        if (TaskContext.Instance().Config.MaskWindowConfig.UseSubform)
-        {
-            RefreshPositionForSubform();
-        }
-        else
-        {
-            RefreshPositionForNormal();
-        }
+        RefreshPositionForNormal();
     }
 
     public void RefreshPositionForNormal()
@@ -113,13 +120,6 @@ public partial class MaskWindow : Window
             Height = currentRect.Height / dpiScale;
             BringToTop();
         });
-    }
-
-    public void RefreshPositionForSubform()
-    {
-        nint targetHWnd = TaskContext.Instance().GameHandle;
-        _ = User32.GetClientRect(targetHWnd, out RECT targetRect);
-        _ = User32.SetWindowPos(_hWnd, IntPtr.Zero, 0, 0, targetRect.Width, targetRect.Height, User32.SetWindowPosFlags.SWP_SHOWWINDOW);
     }
 
     public MaskWindow()
@@ -144,7 +144,11 @@ public partial class MaskWindow : Window
             return;
         }
 
-        (DataContext as MaskWindowViewModel)?.PointInfoPopup.CloseCommand.Execute(null);
+        if (DataContext is MaskWindowViewModel vm)
+        {
+            vm.PointInfoPopup.CloseCommand.Execute(null);
+            vm.IsMapPointPickerOpen = false;
+        }
 
         if (_mapLabelSearchWindow != null)
         {
@@ -159,7 +163,11 @@ public partial class MaskWindow : Window
             return;
         }
 
-        (DataContext as MaskWindowViewModel)?.PointInfoPopup.CloseCommand.Execute(null);
+        if (DataContext is MaskWindowViewModel vm)
+        {
+            vm.PointInfoPopup.CloseCommand.Execute(null);
+            vm.IsMapPointPickerOpen = false;
+        }
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
@@ -181,31 +189,19 @@ public partial class MaskWindow : Window
 
         UpdateClickThroughState();
 
-        if (TaskContext.Instance().Config.MaskWindowConfig.UseSubform)
-        {
-            _hWnd = new WindowInteropHelper(this).Handle;
-            nint targetHWnd = TaskContext.Instance().GameHandle;
-
-            if (User32.GetParent(_hWnd) != targetHWnd)
-            {
-                _ = User32.SetParent(_hWnd, targetHWnd);
-            }
-        }
-
         RefreshPosition();
         PrintSystemInfo();
-        if (_viewModel != null)
-        {
-            PointsCanvasControl.UpdateLabels(_viewModel.MapPointLabels);
-            PointsCanvasControl.UpdatePoints(_viewModel.MapPoints);
-        }
 
         PointsCanvasControl.ViewportChanged += PointsCanvasControlOnViewportChanged;
     }
 
     private void PointsCanvasControlOnViewportChanged(object? sender, EventArgs e)
     {
-        _viewModel?.PointInfoPopup.CloseCommand.Execute(null);
+        if (_viewModel != null)
+        {
+            _viewModel.PointInfoPopup.CloseCommand.Execute(null);
+            _viewModel.IsMapPointPickerOpen = false;
+        }
     }
 
     protected override void OnClosed(EventArgs e)
@@ -249,27 +245,14 @@ public partial class MaskWindow : Window
             Dispatcher.Invoke(UpdateClickThroughState);
         }
 
-        if (e.PropertyName == nameof(MaskWindowViewModel.MapPointLabels))
+        if (e.PropertyName == nameof(MaskWindowViewModel.IsMapPointPickerOpen))
         {
-            Dispatcher.Invoke(() =>
+            if (_viewModel?.IsMapPointPickerOpen != true && _mapLabelSearchWindow != null)
             {
-                if (_viewModel != null)
-                {
-                    PointsCanvasControl.UpdateLabels(_viewModel.MapPointLabels);
-                }
-            });
+                Dispatcher.Invoke(() => _mapLabelSearchWindow.Hide());
+            }
         }
 
-        if (e.PropertyName == nameof(MaskWindowViewModel.MapPoints))
-        {
-            Dispatcher.Invoke(() =>
-            {
-                if (_viewModel != null)
-                {
-                    PointsCanvasControl.UpdatePoints(_viewModel.MapPoints);
-                }
-            });
-        }
     }
 
     private void UpdateClickThroughState()
@@ -278,13 +261,13 @@ public partial class MaskWindow : Window
         {
             var editEnabled = TaskContext.Instance().Config.MaskWindowConfig.OverlayLayoutEditEnabled;
             var inBigMapUi = _viewModel?.IsInBigMapUi == true;
-
+        
             if (editEnabled)
             {
                 this.SetClickThrough(false);
                 return;
             }
-
+        
             this.SetClickThrough(!inBigMapUi);
         }
         catch
@@ -354,7 +337,7 @@ public partial class MaskWindow : Window
 
     private void LogTextBoxTextChanged(object sender, TextChangedEventArgs e)
     {
-        if (LogTextBox.Document.Blocks.FirstBlock is Paragraph p && p.Inlines.Count > 100)
+        if (LogTextBox.Document.Blocks.FirstBlock is Paragraph p && p.Inlines.Count > 1000)
         {
             (p.Inlines as System.Collections.IList).RemoveAt(0);
         }
@@ -385,8 +368,8 @@ public partial class MaskWindow : Window
         var point = textbox.PointToScreen(new Point(0, 0));
         var popupHeight = _mapLabelSearchWindow.ActualHeight > 0 ? _mapLabelSearchWindow.ActualHeight : _mapLabelSearchWindow.Height;
 
-        _mapLabelSearchWindow.Left = point.X;
-        _mapLabelSearchWindow.Top = point.Y - popupHeight - 4;
+        _mapLabelSearchWindow.Left = point.X / DpiHelper.ScaleY;
+        _mapLabelSearchWindow.Top = (point.Y - 4) / DpiHelper.ScaleY - popupHeight;
 
         if (!_mapLabelSearchWindow.IsVisible)
         {
@@ -509,15 +492,64 @@ public partial class MaskWindow : Window
 
             foreach (var kv in VisionContext.Instance().DrawContent.TextList)
             {
+                bool isSkillCd = kv.Key == "SkillCdText";
+                var systemInfo = TaskContext.Instance().SystemInfo;
+                // 使用不封顶的物理比例进行 UI 大小缩放
+                var scaleTo1080 = systemInfo.ScaleTo1080PRatio;
+                
                 foreach (var drawable in kv.Value)
                 {
                     if (!drawable.IsEmpty)
                     {
-                        drawingContext.DrawText(new FormattedText(drawable.Text,
-                            CultureInfo.GetCultureInfo("zh-cn"),
-                            FlowDirection.LeftToRight,
-                            _typeface,
-                            36, Brushes.Black, 1), drawable.Point);
+                        var pixelsPerDip = VisualTreeHelper.GetDpi(this).PixelsPerDip;
+                        var renderPoint = new Point(drawable.Point.X / pixelsPerDip, drawable.Point.Y / pixelsPerDip);
+
+                        if (isSkillCd)
+                        {
+                            // 自定义缩放
+                            var skillConfigScale = TaskContext.Instance().Config.SkillCdConfig.Scale;
+                            double scaledFontSize = (26 * scaleTo1080 * skillConfigScale) / pixelsPerDip;
+                            var mediumTypeface = new Typeface(_fgiTypeface.FontFamily, _fgiTypeface.Style, FontWeights.Medium, _fgiTypeface.Stretch);
+                            bool isZeroCd =
+                                double.TryParse(drawable.Text, NumberStyles.Float, CultureInfo.InvariantCulture, out var cdValue)
+                                && Math.Abs(cdValue) < 0.8;
+
+                            // 从配置读取颜色
+                            var skillConfig = TaskContext.Instance().Config.SkillCdConfig;
+                            string textColorStr = isZeroCd ? skillConfig.TextReadyColor : skillConfig.TextNormalColor;
+                            string bgColorStr = isZeroCd ? skillConfig.BackgroundReadyColor : skillConfig.BackgroundNormalColor;
+
+                            Color textColor = ParseColor(textColorStr) ?? (isZeroCd ? Color.FromRgb(93, 204, 23) : Color.FromRgb(218, 74, 35));
+                            Color bgColor = ParseColor(bgColorStr) ?? Colors.White;
+
+                            Brush textBrush = new SolidColorBrush(textColor);
+                            Brush bgBrush = new SolidColorBrush(bgColor);
+
+                            var formattedText = new FormattedText(
+                                drawable.Text,
+                                CultureInfo.GetCultureInfo("zh-cn"),
+                                FlowDirection.LeftToRight,
+                                mediumTypeface,
+                                scaledFontSize,
+                                textBrush,
+                                pixelsPerDip);
+
+                            double px = (6 * scaleTo1080 * skillConfigScale) / pixelsPerDip;
+                            double py = (2 * scaleTo1080 * skillConfigScale) / pixelsPerDip;
+                            double radius = (5 * scaleTo1080 * skillConfigScale) / pixelsPerDip;
+                            var bgRect = new Rect(renderPoint.X - px, renderPoint.Y - py, formattedText.Width + px * 2, formattedText.Height + py * 2);
+                            drawingContext.DrawRoundedRectangle(bgBrush, null, bgRect, radius, radius);
+                            drawingContext.DrawText(formattedText, renderPoint);
+                        }
+                        else
+                        {
+                            double defaultFontSize = (36 * scaleTo1080) / pixelsPerDip;
+                            drawingContext.DrawText(new FormattedText(drawable.Text,
+                                CultureInfo.GetCultureInfo("zh-cn"),
+                                FlowDirection.LeftToRight,
+                                _typeface,
+                                defaultFontSize, Brushes.Black, pixelsPerDip), renderPoint);
+                        }
                     }
                 }
             }
@@ -531,6 +563,49 @@ public partial class MaskWindow : Window
     }
 
     public RichTextBox LogBox => LogTextBox;
+
+    /// <summary>
+    /// 解析颜色字符串（支持RGB和RGBA的16进制表示）
+    /// </summary>
+    /// <param name="colorStr">颜色字符串，如 #RRGGBB 或 #RRGGBBAA</param>
+    /// <returns>解析后的Color，失败返回null</returns>
+    private static Color? ParseColor(string colorStr)
+    {
+        if (string.IsNullOrWhiteSpace(colorStr))
+        {
+            return null;
+        }
+
+        try
+        {
+            string hex = colorStr.Trim().TrimStart('#');
+
+            // 支持 #RRGGBB 或 #RRGGBBAA 格式
+            if (hex.Length == 6)
+            {
+                // RGB格式
+                byte r = byte.Parse(hex.Substring(0, 2), System.Globalization.NumberStyles.HexNumber);
+                byte g = byte.Parse(hex.Substring(2, 2), System.Globalization.NumberStyles.HexNumber);
+                byte b = byte.Parse(hex.Substring(4, 2), System.Globalization.NumberStyles.HexNumber);
+                return Color.FromArgb(255, r, g, b); // Alpha = 255 (完全不透明)
+            }
+            else if (hex.Length == 8)
+            {
+                // RGBA格式
+                byte r = byte.Parse(hex.Substring(0, 2), System.Globalization.NumberStyles.HexNumber);
+                byte g = byte.Parse(hex.Substring(2, 2), System.Globalization.NumberStyles.HexNumber);
+                byte b = byte.Parse(hex.Substring(4, 2), System.Globalization.NumberStyles.HexNumber);
+                byte a = byte.Parse(hex.Substring(6, 2), System.Globalization.NumberStyles.HexNumber);
+                return Color.FromArgb(a, r, g, b);
+            }
+        }
+        catch (Exception)
+        {
+            // 解析失败，返回null
+        }
+
+        return null;
+    }
 }
 
 file static class MaskWindowExtension
@@ -573,25 +648,9 @@ file static class MaskWindowExtension
 
     public static void SetClickThrough(this Window window, bool isClickThrough)
     {
-        SetClickThrough(new WindowInteropHelper(window).Handle, isClickThrough);
+        SetLayeredWindow(new WindowInteropHelper(window).Handle, isClickThrough);
     }
-
-    private static void SetClickThrough(nint hWnd, bool isClickThrough)
-    {
-        int style = User32.GetWindowLong(hWnd, User32.WindowLongFlags.GWL_EXSTYLE);
-
-        if (isClickThrough)
-        {
-            style |= (int)User32.WindowStylesEx.WS_EX_TRANSPARENT;
-        }
-        else
-        {
-            style &= ~(int)User32.WindowStylesEx.WS_EX_TRANSPARENT;
-        }
-
-        _ = User32.SetWindowLong(hWnd, User32.WindowLongFlags.GWL_EXSTYLE, style);
-    }
-
+    
     public static void SetChildWindow(this Window window)
     {
         SetChildWindow(new WindowInteropHelper(window).Handle);

@@ -107,7 +107,7 @@ public class ApplicationHostService(IServiceProvider serviceProvider, ILogger<Ap
                         scheduler?.OnStartMultiScriptTaskProgressAsync(names);
                     }
                 }
-                else if (args[1].Contains("start"))
+                else if (args[1].Trim().Equals("start", StringComparison.InvariantCultureIgnoreCase))
                 {
                     // 通过命令行参数打开「启动页开关」 => 跳转到主页。
                     _ = _navigationWindow.Navigate(typeof(HomePage));

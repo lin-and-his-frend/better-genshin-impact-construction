@@ -1,5 +1,6 @@
 using BetterGenshinImpact.View.Windows;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -27,27 +28,24 @@ public class SystemControl
 
         var cfg = TaskContext.Instance().Config.GenshinStartConfig;
         var workdir = Path.GetDirectoryName(path) ?? "";
-        var arg = cfg.GenshinStartArgs;
+        if (!GenshinStartArgsValidator.TryNormalize(cfg.GenshinStartArgs, out var args, out var validationError))
+        {
+            await ThemedMessageBox.ErrorAsync(
+                "启动参数校验失败，已阻止启动。\r\n" +
+                validationError +
+                "\r\n\r\n允许的参数：\r\n" +
+                GenshinStartArgsValidator.GetAllowedArgsDescription()
+            );
+            return IntPtr.Zero;
+        }
 
         if (cfg.StartGameWithCmd)
         {
-            var psi = new ProcessStartInfo
-            {
-                FileName = "cmd.exe",
-                Arguments = $"/c start \"\" /d \"{workdir}\" \"{path}\" {arg}",
-                UseShellExecute = false,
-                CreateNoWindow = true
-            };
-            Process.Start(psi);
+            StartFromLocalWithCmd(path, workdir, args);
         }
         else
         {
-            Process.Start(new ProcessStartInfo(path)
-            {
-                UseShellExecute = true,
-                Arguments = arg,
-                WorkingDirectory = workdir
-            });
+            StartFromLocalDirect(path, workdir, args);
         }
 
         for (var i = 0; i < 5; i++)
@@ -65,6 +63,55 @@ public class SystemControl
         }
 
         return FindGenshinImpactHandle();
+    }
+
+    private static void StartFromLocalWithCmd(string path, string workdir, string args)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = "cmd.exe",
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        // /d: 禁用 AutoRun，避免执行用户/系统注入的 cmd 启动脚本
+        psi.ArgumentList.Add("/d");
+        psi.ArgumentList.Add("/c");
+        psi.ArgumentList.Add("start");
+        psi.ArgumentList.Add("");
+        psi.ArgumentList.Add("/d");
+        psi.ArgumentList.Add(workdir);
+        psi.ArgumentList.Add(path);
+
+        foreach (var token in SplitArgs(args))
+        {
+            psi.ArgumentList.Add(token);
+        }
+
+        Process.Start(psi);
+    }
+
+    private static void StartFromLocalDirect(string path, string workdir, string args)
+    {
+        Process.Start(new ProcessStartInfo(path)
+        {
+            UseShellExecute = true,
+            Arguments = args,
+            WorkingDirectory = workdir
+        });
+    }
+
+    private static IEnumerable<string> SplitArgs(string args)
+    {
+        if (string.IsNullOrWhiteSpace(args))
+        {
+            yield break;
+        }
+
+        foreach (var token in args.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            yield return token;
+        }
     }
 
     public static bool IsGenshinImpactActiveByProcess()

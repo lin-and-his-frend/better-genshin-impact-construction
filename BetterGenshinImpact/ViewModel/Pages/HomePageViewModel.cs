@@ -139,7 +139,7 @@ public partial class HomePageViewModel : ViewModel
         }
 
         var args = Environment.GetCommandLineArgs();
-        if (args.Length > 1 && args[1].Contains("start"))
+        if (args.Length > 1 && args[1].Trim().Equals("start", StringComparison.InvariantCultureIgnoreCase))
         {
             _ = OnStartTriggerAsync();
         }

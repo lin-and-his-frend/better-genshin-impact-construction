@@ -32,6 +32,8 @@ github_actions_cache/
 .idea
 .trae
 .claude
+.codex/
+.msbuild-sdks/
 CLAUDE.md
 AGENTS.md
 

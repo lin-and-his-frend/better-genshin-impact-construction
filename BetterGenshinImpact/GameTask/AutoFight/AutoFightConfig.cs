@@ -1,5 +1,6 @@
 ﻿using CommunityToolkit.Mvvm.ComponentModel;
 using System;
+using System.ComponentModel;
 
 namespace BetterGenshinImpact.GameTask.AutoFight;
 
@@ -13,6 +14,13 @@ namespace BetterGenshinImpact.GameTask.AutoFight;
 [Serializable]
 public partial class AutoFightConfig : ObservableObject
 {
+    private FightFinishDetectConfig? _wiredFinishDetectConfig;
+
+    public AutoFightConfig()
+    {
+        WireNestedConfigs();
+    }
+
     [ObservableProperty] private string _strategyName = "";
 
     /// <summary>
@@ -107,6 +115,11 @@ public partial class AutoFightConfig : ObservableObject
     /// </summary>   
     [ObservableProperty]
     private FightFinishDetectConfig _finishDetectConfig = new();
+
+    partial void OnFinishDetectConfigChanged(FightFinishDetectConfig value)
+    {
+        WireNestedConfigs();
+    }
     
     /// <summary>
     /// 检测战斗结束，默认为每轮脚本后检查
@@ -162,6 +175,36 @@ public partial class AutoFightConfig : ObservableObject
     /// </summary>
     [ObservableProperty]
     private int _timeout = 120;
+
+    private void WireNestedConfigs()
+    {
+        Rewire(ref _wiredFinishDetectConfig, FinishDetectConfig, OnFinishDetectConfigPropertyChanged);
+    }
+
+    private static void Rewire<T>(ref T? wired, T? current, PropertyChangedEventHandler handler)
+        where T : class, INotifyPropertyChanged
+    {
+        if (ReferenceEquals(wired, current))
+        {
+            return;
+        }
+
+        if (wired != null)
+        {
+            wired.PropertyChanged -= handler;
+        }
+
+        wired = current;
+        if (wired != null)
+        {
+            wired.PropertyChanged += handler;
+        }
+    }
+
+    private void OnFinishDetectConfigPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(FinishDetectConfig));
+    }
 
 
 }

@@ -1,4 +1,5 @@
 using BetterGenshinImpact.GameTask.Common;
+using BetterGenshinImpact.GameTask;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Diagnostics;
@@ -18,6 +19,12 @@ public class ShellTask(ShellTaskParam param) : ISoloTask
 
     private async Task Execute(CancellationToken ct)
     {
+        if (!TaskContext.Instance().Config.ScriptConfig.EnableShellTask)
+        {
+            TaskControl.Logger.LogWarning("无法执行Shell: 全局Shell任务开关未启用");
+            return;
+        }
+
         if (param.Disable)
         {
             TaskControl.Logger.LogWarning("无法执行Shell: Shell任务被禁用");

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -31,7 +33,11 @@ public sealed class AiChatService
         _httpClient = HttpClientFactory.GetClient("ai-chat", () => new HttpClient());
     }
 
-    public async Task<string> GetChatCompletionAsync(AiConfig config, IReadOnlyList<AiChatMessage> messages, CancellationToken ct)
+    public async Task<string> GetChatCompletionAsync(
+        AiConfig config,
+        IReadOnlyList<AiChatMessage> messages,
+        CancellationToken ct,
+        Func<string, Task>? onDelta = null)
     {
         if (config == null)
         {
@@ -55,22 +61,198 @@ public sealed class AiChatService
             .Select(m => new { role = m.Role.ToLowerInvariant(), content = m.Content })
             .ToArray();
 
-        var payload = new
-        {
-            model = config.Model.Trim(),
-            messages = payloadMessages
-        };
+        var responseFormat = config.UseJsonMode
+            ? new Dictionary<string, object?>
+            {
+                ["type"] = "json_object"
+            }
+            : null;
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey.Trim());
-        request.Content = new StringContent(JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
-
-        using var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
-        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
+        async Task<(HttpStatusCode statusCode, string reasonPhrase, string body)> SendAsync(bool useJsonMode)
         {
-            throw new InvalidOperationException($"请求失败: {(int)response.StatusCode} {response.ReasonPhrase}\n{body}");
+            var payload = new Dictionary<string, object?>
+            {
+                ["model"] = config.Model.Trim(),
+                ["messages"] = payloadMessages
+            };
+
+            if (useJsonMode)
+            {
+                payload["response_format"] = responseFormat;
+            }
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey.Trim());
+            request.Content = new StringContent(JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
+
+            using var response = await _httpClient.SendAsync(request, ct).ConfigureAwait(false);
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            return (response.StatusCode, response.ReasonPhrase ?? string.Empty, body);
+        }
+
+        async Task<(HttpStatusCode statusCode, string reasonPhrase, string body, string content)> SendStreamAsync(bool useJsonMode)
+        {
+            var payload = new Dictionary<string, object?>
+            {
+                ["model"] = config.Model.Trim(),
+                ["messages"] = payloadMessages,
+                ["stream"] = true
+            };
+
+            if (useJsonMode)
+            {
+                payload["response_format"] = responseFormat;
+            }
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey.Trim());
+            request.Content = new StringContent(JsonSerializer.Serialize(payload, JsonOptions), Encoding.UTF8, "application/json");
+
+            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            if ((int)response.StatusCode >= 400)
+            {
+                var errorBody = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                return (response.StatusCode, response.ReasonPhrase ?? string.Empty, errorBody, string.Empty);
+            }
+
+            var builder = new StringBuilder();
+            await using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            using var reader = new StreamReader(stream, Encoding.UTF8);
+
+            var dataBuffer = new StringBuilder();
+            while (true)
+            {
+                var line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
+                if (line == null)
+                {
+                    break;
+                }
+
+                if (line.Length == 0)
+                {
+                    if (dataBuffer.Length > 0)
+                    {
+                        var data = dataBuffer.ToString();
+                        dataBuffer.Clear();
+                        if (!await ProcessSseDataAsync(data).ConfigureAwait(false))
+                        {
+                            break;
+                        }
+                    }
+
+                    continue;
+                }
+
+                if (line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                {
+                    var data = line[5..].TrimStart();
+                    if (dataBuffer.Length > 0)
+                    {
+                        dataBuffer.Append('\n');
+                    }
+
+                    dataBuffer.Append(data);
+                }
+            }
+
+            if (dataBuffer.Length > 0)
+            {
+                _ = await ProcessSseDataAsync(dataBuffer.ToString()).ConfigureAwait(false);
+            }
+
+            return (response.StatusCode, response.ReasonPhrase ?? string.Empty, string.Empty, builder.ToString());
+
+            async Task<bool> ProcessSseDataAsync(string data)
+            {
+                if (string.IsNullOrWhiteSpace(data))
+                {
+                    return true;
+                }
+
+                var payloadText = data.Trim();
+                if (string.Equals(payloadText, "[DONE]", StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                try
+                {
+                    using var doc = JsonDocument.Parse(payloadText);
+                    if (doc.RootElement.TryGetProperty("error", out var error))
+                    {
+                        var message = error.TryGetProperty("message", out var msgElement)
+                            ? msgElement.GetString()
+                            : "未知错误";
+                        throw new InvalidOperationException(message ?? "未知错误");
+                    }
+
+                    if (!doc.RootElement.TryGetProperty("choices", out var choices) ||
+                        choices.ValueKind != JsonValueKind.Array ||
+                        choices.GetArrayLength() == 0)
+                    {
+                        return true;
+                    }
+
+                    var choice = choices[0];
+                    if (choice.TryGetProperty("delta", out var delta))
+                    {
+                        var deltaText = ExtractDeltaContent(delta);
+                        if (!string.IsNullOrEmpty(deltaText))
+                        {
+                            builder.Append(deltaText);
+                            if (onDelta != null)
+                            {
+                                await onDelta(deltaText).ConfigureAwait(false);
+                            }
+                        }
+                    }
+
+                    if (choice.TryGetProperty("finish_reason", out var finishReasonElement) &&
+                        finishReasonElement.ValueKind == JsonValueKind.String &&
+                        !string.IsNullOrWhiteSpace(finishReasonElement.GetString()))
+                    {
+                        return false;
+                    }
+                }
+                catch (JsonException)
+                {
+                }
+
+                return true;
+            }
+        }
+
+        if (config.UseStreamingResponse)
+        {
+            var streamResult = await SendStreamAsync(config.UseJsonMode).ConfigureAwait(false);
+            if ((int)streamResult.statusCode >= 400 &&
+                config.UseJsonMode &&
+                ShouldRetryWithoutJsonMode(streamResult.statusCode, streamResult.body))
+            {
+                streamResult = await SendStreamAsync(false).ConfigureAwait(false);
+            }
+
+            if ((int)streamResult.statusCode >= 400)
+            {
+                throw new InvalidOperationException($"请求失败: {(int)streamResult.statusCode} {streamResult.reasonPhrase}\n{streamResult.body}");
+            }
+
+            return streamResult.content;
+        }
+
+        var result = await SendAsync(config.UseJsonMode).ConfigureAwait(false);
+        if ((int)result.statusCode >= 400 && config.UseJsonMode && ShouldRetryWithoutJsonMode(result.statusCode, result.body))
+        {
+            result = await SendAsync(false).ConfigureAwait(false);
+        }
+
+        var body = result.body;
+        if ((int)result.statusCode >= 400)
+        {
+            throw new InvalidOperationException($"请求失败: {(int)result.statusCode} {result.reasonPhrase}\n{body}");
         }
 
         using var doc = JsonDocument.Parse(body);
@@ -99,6 +281,60 @@ public sealed class AiChatService
         }
 
         return string.Empty;
+    }
+
+    private static string ExtractDeltaContent(JsonElement deltaElement)
+    {
+        if (!deltaElement.TryGetProperty("content", out var contentElement))
+        {
+            return string.Empty;
+        }
+
+        if (contentElement.ValueKind == JsonValueKind.String)
+        {
+            return contentElement.GetString() ?? string.Empty;
+        }
+
+        if (contentElement.ValueKind != JsonValueKind.Array)
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder();
+        foreach (var item in contentElement.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.String)
+            {
+                builder.Append(item.GetString());
+                continue;
+            }
+
+            if (item.ValueKind == JsonValueKind.Object &&
+                item.TryGetProperty("text", out var textElement) &&
+                textElement.ValueKind == JsonValueKind.String)
+            {
+                builder.Append(textElement.GetString());
+            }
+        }
+
+        return builder.ToString();
+    }
+
+    private static bool ShouldRetryWithoutJsonMode(HttpStatusCode statusCode, string body)
+    {
+        if (statusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotFound or HttpStatusCode.UnprocessableEntity)
+        {
+            var lowered = (body ?? string.Empty).ToLowerInvariant();
+            if (lowered.Contains("response_format", StringComparison.Ordinal) ||
+                lowered.Contains("json_mode", StringComparison.Ordinal) ||
+                lowered.Contains("json mode", StringComparison.Ordinal) ||
+                lowered.Contains("json_object", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static string NormalizeBaseUrl(string baseUrl)

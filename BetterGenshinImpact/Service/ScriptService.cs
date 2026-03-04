@@ -19,6 +19,7 @@ using BetterGenshinImpact.GameTask.Common.Job;
 using BetterGenshinImpact.GameTask.FarmingPlan;
 using BetterGenshinImpact.GameTask.LogParse;
 using BetterGenshinImpact.GameTask.TaskProgress;
+using BetterGenshinImpact.Helpers;
 using BetterGenshinImpact.Service.Interface;
 using BetterGenshinImpact.Service.Notification;
 using BetterGenshinImpact.Service.Notification.Model.Enum;
@@ -164,6 +165,23 @@ public partial class ScriptService : IScriptService
             _projectExecutionCount.Clear();
         }
 
+        var scriptGroupSnapshot = new List<ScriptGroup>();
+        try
+        {
+            UIDispatcherHelper.Invoke(() =>
+            {
+                var vm = App.GetService<ScriptControlViewModel>();
+                if (vm != null)
+                {
+                    scriptGroupSnapshot = vm.ScriptGroups.ToList();
+                }
+            });
+        }
+        catch
+        {
+            scriptGroupSnapshot = new List<ScriptGroup>();
+        }
+
 
         await new TaskRunner()
             .RunThreadAsync(async () =>
@@ -193,7 +211,7 @@ public partial class ScriptService : IScriptService
                                 .Where(name => !string.IsNullOrWhiteSpace(name));
 
                             // 获取匹配的脚本组
-                            var scriptGroups = App.GetService<ScriptControlViewModel>().ScriptGroups
+                            var scriptGroups = scriptGroupSnapshot
                                 .Where(g => groupNameSet.Contains(g.Name, StringComparer.OrdinalIgnoreCase))
                                 .ToList();
 

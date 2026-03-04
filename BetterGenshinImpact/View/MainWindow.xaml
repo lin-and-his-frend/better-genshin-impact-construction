@@ -60,6 +60,14 @@
                            IsFooterSeparatorVisible="False"
                            OpenPaneLength="160">
             <ui:NavigationView.MenuItems>
+                <ui:NavigationViewItem Content="AI"
+                                       NavigationCacheMode="Enabled"
+                                       TargetPageType="{x:Type pages:AiChatPage}">
+                    <ui:NavigationViewItem.Icon>
+                        <ui:SymbolIcon Symbol="Bot24" />
+                    </ui:NavigationViewItem.Icon>
+                </ui:NavigationViewItem>
+
                 <ui:NavigationViewItem Content="启动"
                                        NavigationCacheMode="Enabled"
                                        TargetPageType="{x:Type pages:HomePage}">

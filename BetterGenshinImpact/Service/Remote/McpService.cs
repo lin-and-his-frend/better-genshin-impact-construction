@@ -1,10 +1,12 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
 using BetterGenshinImpact.Core.Config;
+using BetterGenshinImpact.Helpers.Win32;
 using BetterGenshinImpact.Service.Interface;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -63,9 +65,9 @@ internal sealed class McpService : IHostedService, IDisposable
 
     private void OnConfigChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(McpConfig.Enabled) or nameof(McpConfig.Port) or nameof(McpConfig.ListenAddress))
+        if (e.PropertyName is nameof(McpConfig.Enabled) or nameof(McpConfig.Port) or nameof(McpConfig.ListenAddress) or nameof(McpConfig.AllowNonLoopbackConnections) or nameof(McpConfig.NonLoopbackRiskAccepted))
         {
-            StartOrStopListener(e.PropertyName is nameof(McpConfig.Port) or nameof(McpConfig.ListenAddress));
+            StartOrStopListener(e.PropertyName is nameof(McpConfig.Port) or nameof(McpConfig.ListenAddress) or nameof(McpConfig.AllowNonLoopbackConnections) or nameof(McpConfig.NonLoopbackRiskAccepted));
         }
     }
 
@@ -103,6 +105,18 @@ internal sealed class McpService : IHostedService, IDisposable
             _listenAddress = IPAddress.Loopback;
         }
 
+        var allowNonLoopback = _config.AllowNonLoopbackConnections && _config.NonLoopbackRiskAccepted;
+        if (_config.AllowNonLoopbackConnections && !_config.NonLoopbackRiskAccepted && !IsLoopbackAddress(_listenAddress))
+        {
+            _logger.LogWarning("MCP 非回环监听未生效：尚未同意风险提示。请在设置中确认风险后再开放非本地监听。");
+        }
+
+        if (!allowNonLoopback && !IsLoopbackAddress(_listenAddress))
+        {
+            _logger.LogWarning("MCP 当前仅允许回环地址监听。请将监听地址改为 127.0.0.1/::1，或在设置中手动开启“允许非回环地址连接”。");
+            return;
+        }
+
         try
         {
             var listener = new TcpListener(_listenAddress, _config.Port);
@@ -113,15 +127,18 @@ internal sealed class McpService : IHostedService, IDisposable
             _currentPort = _config.Port;
             _currentAddress = _config.ListenAddress;
             _logger.LogInformation("MCP 监听已启动: {Address}:{Port}", _listenAddress, _config.Port);
+            ConsoleHelper.WriteLine($"[MCP] listener started: pid={Process.GetCurrentProcess().Id} {_listenAddress}:{_config.Port}");
         }
         catch (SocketException ex)
         {
             _logger.LogWarning(ex, "启动 MCP 监听失败，请检查端口权限或占用情况");
+            ConsoleHelper.WriteError($"[MCP] listener start failed: {_listenAddress}:{_config.Port} {ex.Message}");
             StopListener();
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "启动 MCP 监听失败");
+            ConsoleHelper.WriteError($"[MCP] listener start failed: {_listenAddress}:{_config.Port} {ex.Message}");
             StopListener();
         }
     }
@@ -183,11 +200,21 @@ internal sealed class McpService : IHostedService, IDisposable
                 continue;
             }
 
-            _ = Task.Run(() => HandleClientAsync(client, ct), ct);
+            var remote = client.Client.RemoteEndPoint?.ToString() ?? "unknown";
+            var allowNonLoopback = _config != null && _config.AllowNonLoopbackConnections && _config.NonLoopbackRiskAccepted;
+            if (!allowNonLoopback && !IsLoopbackRemoteClient(client))
+            {
+                _logger.LogWarning("拒绝来自非本机地址的 MCP 连接: {Remote}", remote);
+                client.Close();
+                continue;
+            }
+
+            ConsoleHelper.WriteLine($"[MCP] client connected: {remote}");
+            _ = Task.Run(() => HandleClientAsync(client, ct, remote), ct);
         }
     }
 
-    private async Task HandleClientAsync(TcpClient client, CancellationToken ct)
+    private async Task HandleClientAsync(TcpClient client, CancellationToken ct, string remote)
     {
         await using var stream = client.GetStream();
         try
@@ -200,6 +227,32 @@ internal sealed class McpService : IHostedService, IDisposable
         finally
         {
             client.Close();
+            ConsoleHelper.WriteLine($"[MCP] client disconnected: {remote}");
         }
+    }
+
+    private static bool IsLoopbackRemoteClient(TcpClient client)
+    {
+        if (client.Client.RemoteEndPoint is not IPEndPoint remoteEndPoint)
+        {
+            return false;
+        }
+
+        return IsLoopbackAddress(remoteEndPoint.Address);
+    }
+
+    private static bool IsLoopbackAddress(IPAddress address)
+    {
+        if (IPAddress.IsLoopback(address))
+        {
+            return true;
+        }
+
+        if (address.IsIPv4MappedToIPv6)
+        {
+            return IPAddress.IsLoopback(address.MapToIPv4());
+        }
+
+        return false;
     }
 }

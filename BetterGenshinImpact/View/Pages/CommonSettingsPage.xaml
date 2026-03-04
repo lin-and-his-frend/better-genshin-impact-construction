@@ -480,14 +480,42 @@
                                   Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
                                   Text="提供基础远程操控与日志/画面查看（默认端口 50000）"
                                   TextWrapping="Wrap" />
-                    <ui:ToggleSwitch Grid.Row="0"
-                                     Grid.RowSpan="2"
-                                     Grid.Column="1"
-                                     Margin="0,0,24,0"
-                                     IsChecked="{Binding Config.WebRemoteConfig.Enabled, Mode=TwoWay}" />
                 </Grid>
             </ui:CardExpander.Header>
             <StackPanel>
+                <ui:TextBlock Margin="16,8,16,0"
+                              FontTypography="BodyStrong"
+                              Text="访问控制"
+                              TextWrapping="Wrap" />
+                <ui:TextBlock Margin="16,0,16,0"
+                              Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                              Text="先配置对外暴露范围与鉴权，再开启 Web 外部调用"
+                              TextWrapping="Wrap" />
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="启用 Web 外部调用"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="控制 50000 端口是否对外提供 Web 远程服务"
+                                  TextWrapping="Wrap" />
+                    <ui:ToggleSwitch Grid.Row="0"
+                                     Grid.RowSpan="2"
+                                     Grid.Column="1"
+                                     Margin="0,0,36,0"
+                                     IsChecked="{Binding Config.WebRemoteConfig.Enabled, Mode=TwoWay}" />
+                </Grid>
                 <Grid Margin="16">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -529,12 +557,12 @@
                     <ui:TextBlock Grid.Row="0"
                                   Grid.Column="0"
                                   FontTypography="Body"
-                                  Text="允许局域网访问"
+                                  Text="允许第三方访问"
                                   TextWrapping="Wrap" />
                     <ui:TextBlock Grid.Row="1"
                                   Grid.Column="0"
                                   Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
-                                  Text="需要管理员权限或手动添加 URL ACL"
+                                  Text="开启后优先监听 0.0.0.0 与 [::]（IPv6）；需要管理员权限或手动添加 URL ACL"
                                   TextWrapping="Wrap" />
                     <ui:ToggleSwitch Grid.Row="0"
                                      Grid.RowSpan="2"
@@ -542,33 +570,15 @@
                                      Margin="0,0,36,0"
                                      IsChecked="{Binding Config.WebRemoteConfig.LanEnabled, Mode=TwoWay}" />
                 </Grid>
+                <ui:TextBlock Margin="16,4,16,0"
+                              FontTypography="BodyStrong"
+                              Text="登录鉴权（必填）"
+                              TextWrapping="Wrap" />
+                <ui:TextBlock Margin="16,0,16,0"
+                              Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                              Text="Web 远程控制已改为强制鉴权：未配置账号密码时，无法启动 Web 远程控制"
+                              TextWrapping="Wrap" />
                 <Grid Margin="16">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <ui:TextBlock Grid.Row="0"
-                                  Grid.Column="0"
-                                  FontTypography="Body"
-                                  Text="启用鉴权"
-                                  TextWrapping="Wrap" />
-                    <ui:TextBlock Grid.Row="1"
-                                  Grid.Column="0"
-                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
-                                  Text="账号密码仅可在本地软件设置"
-                                  TextWrapping="Wrap" />
-                    <ui:ToggleSwitch Grid.Row="0"
-                                     Grid.RowSpan="2"
-                                     Grid.Column="1"
-                                     Margin="0,0,36,0"
-                                     IsChecked="{Binding Config.WebRemoteConfig.AuthEnabled, Mode=TwoWay}" />
-                </Grid>
-                <Grid Margin="16"
-                      Visibility="{Binding Config.WebRemoteConfig.AuthEnabled, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -595,8 +605,7 @@
                                 Text="{Binding Config.WebRemoteConfig.Username, Mode=TwoWay}"
                                 PlaceholderText="admin" />
                 </Grid>
-                <Grid Margin="16"
-                      Visibility="{Binding Config.WebRemoteConfig.AuthEnabled, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Grid Margin="16">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -623,6 +632,47 @@
                                     Password="{Binding Config.WebRemoteConfig.Password, Mode=TwoWay}"
                                     PlaceholderText="password" />
                 </Grid>
+                <ui:TextBlock Margin="16,4,16,0"
+                              FontTypography="BodyStrong"
+                              Text="高风险能力"
+                              TextWrapping="Wrap" />
+                <ui:TextBlock Margin="16,0,16,0"
+                              Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                              Text="以下能力可能导致远程配置篡改或集群控制，请谨慎开启"
+                              TextWrapping="Wrap" />
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="允许 Web 高级配置接口"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="高风险：开放 /api/config/get 与 /api/config/set（默认关闭）"
+                                  TextWrapping="Wrap" />
+                    <ui:ToggleSwitch Grid.Row="0"
+                                     Grid.RowSpan="2"
+                                     Grid.Column="1"
+                                     Margin="0,0,36,0"
+                                     IsChecked="{Binding Config.WebRemoteConfig.AllowAdvancedConfigApi, Mode=TwoWay}" />
+                </Grid>
+                <ui:TextBlock Margin="16,4,16,0"
+                              FontTypography="BodyStrong"
+                              Text="Web 页面能力"
+                              TextWrapping="Wrap" />
+                <ui:TextBlock Margin="16,0,16,0"
+                              Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                              Text="仅影响 Web 页面可见信息，不改变远程控制权限"
+                              TextWrapping="Wrap" />
                 <Grid Margin="16">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -698,6 +748,14 @@
                                      Margin="0,0,36,0"
                                      IsChecked="{Binding Config.WebRemoteConfig.ScreenStreamEnabled, Mode=TwoWay}" />
                 </Grid>
+                <ui:TextBlock Margin="16,4,16,0"
+                              FontTypography="BodyStrong"
+                              Text="集群群控（高风险）"
+                              TextWrapping="Wrap" />
+                <ui:TextBlock Margin="16,0,16,0"
+                              Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                              Text="用于多实例集中控制，建议务必配置 Token 与 IP 白名单"
+                              TextWrapping="Wrap" />
                 <Grid Margin="16">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -813,14 +871,42 @@
                                   Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
                                   Text="Model Context Protocol 监听（内置服务）"
                                   TextWrapping="Wrap" />
-                    <ui:ToggleSwitch Grid.Row="0"
-                                     Grid.RowSpan="2"
-                                     Grid.Column="1"
-                                     Margin="0,0,24,0"
-                                     IsChecked="{Binding Config.McpConfig.Enabled, Mode=TwoWay}" />
                 </Grid>
             </ui:CardExpander.Header>
             <StackPanel>
+                <ui:TextBlock Margin="16,8,16,0"
+                              FontTypography="BodyStrong"
+                              Text="外部调用入口"
+                              TextWrapping="Wrap" />
+                <ui:TextBlock Margin="16,0,16,0"
+                              Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                              Text="外部端口调用需先开启；内部模块调用不受此处开关限制"
+                              TextWrapping="Wrap" />
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="启用 MCP 外部调用"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="控制 MCP 端口是否对外开放；内部调用不受此开关影响"
+                                  TextWrapping="Wrap" />
+                    <ui:ToggleSwitch Grid.Row="0"
+                                     Grid.RowSpan="2"
+                                     Grid.Column="1"
+                                     Margin="0,0,36,0"
+                                     IsChecked="{Binding Config.McpConfig.Enabled, Mode=TwoWay}" />
+                </Grid>
                 <Grid Margin="16">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -876,6 +962,291 @@
                                 Margin="0,0,36,0"
                                 Text="{Binding Config.McpConfig.ListenAddress, Mode=TwoWay}"
                                 PlaceholderText="127.0.0.1" />
+                </Grid>
+                <ui:TextBlock Margin="16,4,16,0"
+                              FontTypography="BodyStrong"
+                              Text="MCP 外部调用高风险能力"
+                              TextWrapping="Wrap" />
+                <ui:TextBlock Margin="16,0,16,0"
+                              Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                              Text="以下开关仅影响外部端口调用，请按需启用"
+                              TextWrapping="Wrap" />
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="允许非本地地址连接"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="可被局域网其他主机访问，需先确认风险提示"
+                                  TextWrapping="Wrap" />
+                    <ui:ToggleSwitch Grid.Row="0"
+                                     Grid.RowSpan="2"
+                                     Grid.Column="1"
+                                     Margin="0,0,36,0"
+                                     IsChecked="{Binding Config.McpConfig.AllowNonLoopbackConnections, Mode=TwoWay}" />
+                </Grid>
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="允许 MCP 修改配置"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="开启后允许使用 bgi.config.set（仍受白名单限制）"
+                                  TextWrapping="Wrap" />
+                    <ui:ToggleSwitch Grid.Row="0"
+                                     Grid.RowSpan="2"
+                                     Grid.Column="1"
+                                     Margin="0,0,36,0"
+                                     IsChecked="{Binding Config.McpConfig.AllowConfigSet, Mode=TwoWay}" />
+                </Grid>
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="允许 MCP 启动游戏动作"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="开启后允许调用 bgi.action.start_game"
+                                  TextWrapping="Wrap" />
+                    <ui:ToggleSwitch Grid.Row="0"
+                                     Grid.RowSpan="2"
+                                     Grid.Column="1"
+                                     Margin="0,0,36,0"
+                                     IsChecked="{Binding Config.McpConfig.AllowStartGameAction, Mode=TwoWay}" />
+                </Grid>
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="允许 MCP 立即导入脚本"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="高风险：订阅脚本时可立即写入本地脚本目录"
+                                  TextWrapping="Wrap" />
+                    <ui:ToggleSwitch Grid.Row="0"
+                                     Grid.RowSpan="2"
+                                     Grid.Column="1"
+                                     Margin="0,0,36,0"
+                                     IsChecked="{Binding Config.ScriptConfig.AllowMcpImportNow, Mode=TwoWay}" />
+                </Grid>
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="自动执行 MCP 调用"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="高风险：AI 生成工具调用后将自动执行，建议仅在可信输入下启用"
+                                  TextWrapping="Wrap" />
+                    <ui:ToggleSwitch Grid.Row="0"
+                                     Grid.RowSpan="2"
+                                     Grid.Column="1"
+                                     Margin="0,0,36,0"
+                                     IsChecked="{Binding Config.AiConfig.AutoExecuteMcpToolCalls, Mode=TwoWay}" />
+                </Grid>
+                <ui:TextBlock Margin="16,4,16,0"
+                              FontTypography="BodyStrong"
+                              Text="联网搜索（AI 辅助）"
+                              TextWrapping="Wrap" />
+                <ui:TextBlock Margin="16,0,16,0"
+                              Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                              Text="用于 AI 术语补充，不会直接执行本地控制动作"
+                              TextWrapping="Wrap" />
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="允许 MCP 联网搜索（AI 问答）"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="用于 AI 不懂原神术语时联网查询（默认开启）；开启后会把搜索关键词发送到搜索服务"
+                                  TextWrapping="Wrap" />
+                    <ui:ToggleSwitch Grid.Row="0"
+                                     Grid.RowSpan="2"
+                                     Grid.Column="1"
+                                     Margin="0,0,36,0"
+                                     IsChecked="{Binding Config.McpConfig.WebSearchEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                </Grid>
+                <Grid Margin="16"
+                      IsEnabled="{Binding Config.McpConfig.WebSearchEnabled}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="联网搜索 Provider"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="auto：优先 SearXNG(BaseUrl) → Genshin Wiki(Fandom) → DuckDuckGo"
+                                  TextWrapping="Wrap" />
+                    <ComboBox Grid.Row="0"
+                              Grid.RowSpan="2"
+                              Grid.Column="1"
+                              Width="220"
+                              Margin="0,0,36,0"
+                              SelectedValuePath="Tag"
+                              SelectedValue="{Binding Config.McpConfig.WebSearchProvider, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
+                        <ComboBoxItem Content="自动（推荐）" Tag="auto" />
+                        <ComboBoxItem Content="SearXNG（自建/公共实例）" Tag="searxng" />
+                        <ComboBoxItem Content="Genshin Wiki (Fandom)" Tag="fandom" />
+                        <ComboBoxItem Content="DuckDuckGo" Tag="duckduckgo" />
+                    </ComboBox>
+                </Grid>
+                <Grid Margin="16"
+                      IsEnabled="{Binding Config.McpConfig.WebSearchEnabled}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="SearXNG Base URL"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="仅 provider 为 auto/searxng 时使用（示例：http://127.0.0.1:8080）"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBox Grid.Row="0"
+                                Grid.RowSpan="2"
+                                Grid.Column="1"
+                                Width="320"
+                                Margin="0,0,36,0"
+                                Text="{Binding Config.McpConfig.WebSearchBaseUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Delay=400}"
+                                PlaceholderText="https://searxng.example.com" />
+                </Grid>
+                <Grid Margin="16"
+                      IsEnabled="{Binding Config.McpConfig.WebSearchEnabled}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="返回条数"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="建议 3-5，过大可能拖慢响应"
+                                  TextWrapping="Wrap" />
+                    <ui:NumberBox Grid.Row="0"
+                                  Grid.RowSpan="2"
+                                  Grid.Column="1"
+                                  Width="140"
+                                  Margin="0,0,36,0"
+                                  Minimum="1"
+                                  Maximum="10"
+                                  ValidationMode="InvalidInputOverwritten"
+                                  Value="{Binding Config.McpConfig.WebSearchMaxResults, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                </Grid>
+                <Grid Margin="16"
+                      IsEnabled="{Binding Config.McpConfig.WebSearchEnabled}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="语言"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="例如 zh-CN / en-US（部分 provider 会忽略）"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBox Grid.Row="0"
+                                Grid.RowSpan="2"
+                                Grid.Column="1"
+                                Width="140"
+                                Margin="0,0,36,0"
+                                Text="{Binding Config.McpConfig.WebSearchLanguage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Delay=400}"
+                                PlaceholderText="zh-CN" />
                 </Grid>
             </StackPanel>
         </ui:CardExpander>
@@ -1028,13 +1399,93 @@
                     <ui:TextBlock Grid.Row="1"
                                   Grid.Column="0"
                                   Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
-                                  Text="通过命令行参数启动配置组/一条龙时，先等待脚本更新完成再执行"
+                                  Text="通过命令行参数启动配置组/一条龙时，先等待脚本更新完成再执行（需先启用安全设置中的命令行启动）"
                                   TextWrapping="Wrap" />
                     <ui:ToggleSwitch Grid.Row="0"
                                      Grid.RowSpan="2"
                                      Grid.Column="1"
                                      Margin="0,0,36,0"
-                                     IsChecked="{Binding Config.ScriptConfig.AutoUpdateBeforeCommandLineRun, Mode=TwoWay}" />
+                                     IsChecked="{Binding Config.ScriptConfig.AutoUpdateBeforeCommandLineRun, Mode=TwoWay}"
+                                     IsEnabled="{Binding Config.ScriptConfig.EnableCommandLineStart, Mode=OneWay}" />
+                </Grid>
+            </StackPanel>
+        </ui:CardExpander>
+
+        <ui:CardExpander Margin="0,0,0,12"
+                         ContentPadding="0"
+                         Icon="{ui:SymbolIcon Info24}">
+            <ui:CardExpander.Header>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="脚本任务安全"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="与脚本执行权限/命令行自动执行相关的高风险开关"
+                                  TextWrapping="Wrap" />
+                </Grid>
+            </ui:CardExpander.Header>
+            <StackPanel>
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="允许命令行参数启动任务"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="高风险：可通过 cmd 传参触发自动执行（如一条龙/调度组）"
+                                  TextWrapping="Wrap" />
+                    <ui:ToggleSwitch Grid.Row="0"
+                                     Grid.RowSpan="2"
+                                     Grid.Column="1"
+                                     Margin="0,0,36,0"
+                                     IsChecked="{Binding Config.ScriptConfig.EnableCommandLineStart, Mode=TwoWay}" />
+                </Grid>
+                <Grid Margin="16">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="启用全局 Shell 任务"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="高风险：脚本可执行 cmd 命令；未开启时会全局拒绝 Shell 任务"
+                                  TextWrapping="Wrap" />
+                    <ui:ToggleSwitch Grid.Row="0"
+                                     Grid.RowSpan="2"
+                                     Grid.Column="1"
+                                     Margin="0,0,36,0"
+                                     IsChecked="{Binding Config.ScriptConfig.EnableShellTask, Mode=TwoWay}" />
                 </Grid>
             </StackPanel>
         </ui:CardExpander>

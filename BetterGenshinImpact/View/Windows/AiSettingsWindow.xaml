@@ -42,11 +42,13 @@
                             <StackPanel>
                                 <ui:TextBlock FontTypography="BodyStrong" Text="AI 接口" />
                                 <ui:TextBlock Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
-                                              Text="OpenAI Chat Completions (/v1/chat/completions)，Base URL 会自动补全 /v1。" />
+                                              Text="OpenAI 兼容 Chat Completions（默认使用硅基流动 API），Base URL 会自动补全 /v1。" />
                             </StackPanel>
                         </ui:CardExpander.Header>
                         <Grid>
                             <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
@@ -66,8 +68,8 @@
                             <ui:TextBox Grid.Row="0"
                                         Grid.Column="1"
                                         Margin="0,0,0,8"
-                                        Text="{Binding Config.BaseUrl, Mode=TwoWay}"
-                                        PlaceholderText="https://api.openai.com/v1" />
+                                        Text="{Binding Config.BaseUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Delay=400}"
+                                        PlaceholderText="https://api.siliconflow.cn/v1" />
 
                             <ui:TextBlock Grid.Row="1"
                                           Grid.Column="0"
@@ -89,7 +91,7 @@
                                         Grid.Column="1"
                                         Margin="0,0,0,8"
                                         Text="{Binding Config.Model, Mode=TwoWay}"
-                                        PlaceholderText="gpt-4o-mini" />
+                                        PlaceholderText="Qwen/Qwen2.5-72B-Instruct" />
 
                             <ui:TextBlock Grid.Row="3"
                                           Grid.Column="0"
@@ -98,9 +100,57 @@
                                           Text="最大上下文(字符)" />
                             <ui:TextBox Grid.Row="3"
                                         Grid.Column="1"
-                                        Margin="0,0,0,0"
+                                        Margin="0,0,0,8"
                                         Text="{Binding Config.MaxContextChars, Mode=TwoWay}"
                                         PlaceholderText="80000" />
+
+                            <ui:TextBlock Grid.Row="4"
+                                          Grid.Column="0"
+                                          Margin="0,0,12,0"
+                                          FontTypography="BodyStrong"
+                                          Text="JSON Mode" />
+                            <ui:StackPanel Grid.Row="4"
+                                           Grid.Column="1"
+                                           Orientation="Vertical">
+                                <ui:ToggleSwitch HorizontalAlignment="Left"
+                                                 IsChecked="{Binding Config.UseJsonMode, Mode=TwoWay}" />
+                                <ui:TextBlock Margin="0,4,0,0"
+                                              Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                              Text="针对 SiliconFlow 等支持 JSON Mode 的站点，提升 MCP 工具调用结构稳定性。" />
+                            </ui:StackPanel>
+
+                            <ui:TextBlock Grid.Row="5"
+                                          Grid.Column="0"
+                                          Margin="0,8,12,0"
+                                          FontTypography="BodyStrong"
+                                          Text="流式输出" />
+                            <ui:StackPanel Grid.Row="5"
+                                           Grid.Column="1"
+                                           Margin="0,8,0,0"
+                                           Orientation="Vertical">
+                                <ui:ToggleSwitch HorizontalAlignment="Left"
+                                                 IsChecked="{Binding Config.UseStreamingResponse, Mode=TwoWay}" />
+                                <ui:TextBlock Margin="0,4,0,0"
+                                              Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                              Text="开启后使用 stream=true 并在聊天区启用打字机效果；关闭则一次性返回完整回复。" />
+                            </ui:StackPanel>
+
+                            <ui:TextBlock Grid.Row="6"
+                                          Grid.Column="0"
+                                          Margin="0,8,12,0"
+                                          FontTypography="BodyStrong"
+                                          Text="MCP 可视化输出" />
+                            <ui:StackPanel Grid.Row="6"
+                                           Grid.Column="1"
+                                           Margin="0,8,0,0"
+                                           Orientation="Vertical">
+                                <ui:ToggleSwitch HorizontalAlignment="Left"
+                                                 IsChecked="{Binding Config.ShowMcpVisualizationOutput, Mode=TwoWay}" />
+                                <ui:TextBlock Margin="0,4,0,0"
+                                              Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                              Text="关闭后不在 AI 聊天中展示 MCP 中间过程消息（仅影响聊天可视化，不影响日志）。" />
+                            </ui:StackPanel>
+
                         </Grid>
                     </ui:CardExpander>
 
@@ -112,11 +162,13 @@
                             <StackPanel>
                                 <ui:TextBlock FontTypography="BodyStrong" Text="向量模型（脚本检索）" />
                                 <ui:TextBlock Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
-                                              Text="使用 OpenAI Embeddings 格式接口，对脚本名称进行语义检索与重排。" />
+                                              Text="使用 OpenAI Embeddings 语义召回，可选叠加 Rerank 重排提升相关性。" />
                             </StackPanel>
                         </ui:CardExpander.Header>
                         <Grid>
                             <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
@@ -158,7 +210,7 @@
                                         Grid.Column="1"
                                         Margin="0,0,0,8"
                                         IsEnabled="{Binding Config.VectorEndpointEditable}"
-                                        Text="{Binding Config.VectorBaseUrl, Mode=TwoWay}"
+                                        Text="{Binding Config.VectorBaseUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Delay=400}"
                                         PlaceholderText="勾选“复用 AI 站点”时此项会被忽略" />
 
                             <ui:TextBlock Grid.Row="3"
@@ -184,6 +236,29 @@
                                         IsEnabled="{Binding Config.VectorSearchEnabled}"
                                         Text="{Binding Config.VectorModel, Mode=TwoWay}"
                                         PlaceholderText="BAAI/bge-m3" />
+
+                            <ui:TextBlock Grid.Row="5"
+                                          Grid.Column="0"
+                                          Margin="0,8,12,8"
+                                          FontTypography="BodyStrong"
+                                          Text="启用重排" />
+                            <ui:ToggleSwitch Grid.Row="5"
+                                             Grid.Column="1"
+                                             Margin="0,8,0,8"
+                                             HorizontalAlignment="Left"
+                                             IsEnabled="{Binding Config.VectorSearchEnabled}"
+                                             IsChecked="{Binding Config.VectorRerankEnabled, Mode=TwoWay}" />
+
+                            <ui:TextBlock Grid.Row="6"
+                                          Grid.Column="0"
+                                          Margin="0,0,12,0"
+                                          FontTypography="BodyStrong"
+                                          Text="重排模型" />
+                            <ui:TextBox Grid.Row="6"
+                                        Grid.Column="1"
+                                        IsEnabled="{Binding Config.VectorSearchEnabled}"
+                                        Text="{Binding Config.VectorRerankModel, Mode=TwoWay}"
+                                        PlaceholderText="BAAI/bge-reranker-v2-m3" />
                         </Grid>
                     </ui:CardExpander>
 

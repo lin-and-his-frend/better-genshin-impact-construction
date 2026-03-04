@@ -290,20 +290,39 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
         {
             try
             {
-                var (first, remainingPath) = GetFirstFolderAndRemainingPath(path);
-                if (!PathMapper.TryGetValue(first, out var userPath))
+                if (!TryNormalizeSubscribedPath(path, out var normalizedPath, out var first, out var remainingPath, out var normalizeError))
                 {
-                    _logger.LogDebug("未知的脚本路径类型: {Path}", path);
+                    failCount++;
+                    _logger.LogWarning("跳过非法订阅路径 {Path}: {Error}", path, normalizeError);
                     continue;
                 }
 
-                var destPath = Path.Combine(userPath, remainingPath);
+                if (string.IsNullOrWhiteSpace(remainingPath))
+                {
+                    failCount++;
+                    _logger.LogWarning("跳过顶层订阅路径，避免覆盖根目录: {Path}", normalizedPath);
+                    continue;
+                }
+
+                if (!PathMapper.TryGetValue(first, out var userPath))
+                {
+                    _logger.LogDebug("未知的脚本路径类型: {Path}", normalizedPath);
+                    failCount++;
+                    continue;
+                }
+
+                if (!TryResolveUserDestinationPath(userPath, remainingPath, out var destPath, out var destError))
+                {
+                    failCount++;
+                    _logger.LogWarning("目标路径非法，跳过订阅路径 {Path}: {Error}", normalizedPath, destError);
+                    continue;
+                }
 
                 // 备份需要保存的文件（仅 JS 脚本）
                 List<string> backupFiles = new();
                 if (first == "js")
                 {
-                    backupFiles = BackupScriptFiles(path, repoPath);
+                    backupFiles = BackupScriptFiles(normalizedPath, repoPath);
                 }
 
                 // 删除旧文件/目录
@@ -317,7 +336,7 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
                 }
 
                 // 从仓库检出最新文件
-                CheckoutPath(repoPath, path, destPath);
+                CheckoutPath(repoPath, normalizedPath, destPath);
 
                 // 图标处理（仅对目录）
                 if (Directory.Exists(destPath))
@@ -328,7 +347,7 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
                 // 恢复备份的文件
                 if (first == "js" && backupFiles.Count > 0)
                 {
-                    RestoreScriptFiles(path, repoPath);
+                    RestoreScriptFiles(normalizedPath, repoPath);
                 }
 
                 // 解析 JS 脚本依赖
@@ -338,7 +357,7 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
                 }
 
                 successCount++;
-                _logger.LogInformation("更新脚本成功: {Path}", path);
+                _logger.LogInformation("更新脚本成功: {Path}", normalizedPath);
             }
             catch (Exception ex)
             {
@@ -431,7 +450,7 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
 
             _logger.LogInformation("自动更新订阅脚本：开始静默更新脚本仓库...");
 
-            var (_, updated) = await UpdateCenterRepoByGitCore(repoUrl, null);
+            var (_, updated) = await UpdateCenterRepoByGitCore(repoUrl, null, scriptConfig.UseSystemProxyForRepoUpdate);
 
             if (updated)
             {
@@ -703,12 +722,14 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
         }
     }
 
-    public async Task<(string, bool)> UpdateCenterRepoByGit(string repoUrl, CheckoutProgressHandler? onCheckoutProgress)
+    public async Task<(string, bool)> UpdateCenterRepoByGit(string repoUrl, CheckoutProgressHandler? onCheckoutProgress,
+        bool? useSystemProxy = null)
     {
+        var useSystemProxyValue = useSystemProxy ?? TaskContext.Instance().Config.ScriptConfig.UseSystemProxyForRepoUpdate;
         await _repoWriteLock.WaitAsync();
         try
         {
-            return await UpdateCenterRepoByGitCore(repoUrl, onCheckoutProgress);
+            return await UpdateCenterRepoByGitCore(repoUrl, onCheckoutProgress, useSystemProxyValue);
         }
         finally
         {
@@ -716,7 +737,8 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
         }
     }
 
-    private async Task<(string, bool)> UpdateCenterRepoByGitCore(string repoUrl, CheckoutProgressHandler? onCheckoutProgress)
+    private async Task<(string, bool)> UpdateCenterRepoByGitCore(string repoUrl,
+        CheckoutProgressHandler? onCheckoutProgress, bool useSystemProxy)
     {
         if (string.IsNullOrEmpty(repoUrl))
         {
@@ -738,9 +760,10 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
                 if (!Directory.Exists(repoPath))
                 {
                     // 如果仓库不存在，执行浅克隆操作
-                    _logger.LogInformation($"浅克隆仓库: {repoUrl} 到 {repoPath}");
+                    _logger.LogInformation("浅克隆仓库: {RepoUrl} 到 {RepoPath}，系统代理: {UseSystemProxy}",
+                        repoUrl, repoPath, useSystemProxy ? "开启" : "关闭");
 
-                    CloneRepository(repoUrl, repoPath, "release", onCheckoutProgress);
+                    CloneRepository(repoUrl, repoPath, "release", onCheckoutProgress, useSystemProxy);
                     SaveFolderMapping(repoUrl.TrimEnd('/'), Path.GetFileName(repoPath));
                     updated = true;
                 }
@@ -765,7 +788,7 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
                     {
                         Toast.Error($"不是有效的Git仓库，将重新克隆");
                         UIDispatcherHelper.Invoke(() => Toast.Error("不是有效的Git仓库，将重新克隆"));
-                        CloneRepository(repoUrl, repoPath, "release", onCheckoutProgress);
+                        CloneRepository(repoUrl, repoPath, "release", onCheckoutProgress, useSystemProxy);
                         updated = true;
                         return;
                     }
@@ -786,7 +809,7 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
                         bool cloneSucceeded = false;
                         try
                         {
-                            CloneRepository(repoUrl, tempPath, "release", onCheckoutProgress);
+                            CloneRepository(repoUrl, tempPath, "release", onCheckoutProgress, useSystemProxy);
                             cloneSucceeded = true;
                         }
                         catch (Exception cloneEx)
@@ -843,16 +866,16 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
                         return;
                     }
 
-                    // 直接获取远程分支的 Commit SHA
-                    var remoteReferences = repo.Network.ListReferences(repoUrl, CreateCredentialsHandler());
-                    var remoteBranch = remoteReferences.FirstOrDefault(r => r.CanonicalName == "refs/heads/release");
+                    var fetchOptions = CreateFetchOptions(useSystemProxy, null);
+                    var refSpec = "+refs/heads/release:refs/remotes/origin/release";
+                    Commands.Fetch(repo, origin.Name, new[] { refSpec }, fetchOptions, "检查远程更新");
 
-                    if (remoteBranch == null)
+                    var remoteCommitSha = repo.Branches["origin/release"]?.Tip?.Sha;
+                    if (string.IsNullOrEmpty(remoteCommitSha))
                     {
-                        throw new Exception("未找到远程release分支");
+                        throw new Exception("未找到远程 release 分支");
                     }
 
-                    var remoteCommitSha = remoteBranch.TargetIdentifier;
                     var currentCommitSha = repo.Branches["release"]?.Tip?.Sha;
 
                     // 比较本地和远程commit
@@ -866,7 +889,7 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
                         _logger.LogInformation($"检测到远程更新: 本地 {currentCommitSha?[..7] ?? "无"} -> 远程 {remoteCommitSha[..7]}");
                         repo?.Dispose();
                         repo = null;
-                        CloneRepository(repoUrl, repoPath, "release", onCheckoutProgress);
+                        CloneRepository(repoUrl, repoPath, "release", onCheckoutProgress, useSystemProxy);
                         updated = true;
                     }
                 }
@@ -877,7 +900,7 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
                 UIDispatcherHelper.Invoke(() => Toast.Error("脚本仓库更新异常，直接删除后重新克隆\n原因：" + ex.Message));
                 repo?.Dispose();
                 repo = null;
-                CloneRepository(repoUrl, repoPath, "release", onCheckoutProgress);
+                CloneRepository(repoUrl, repoPath, "release", onCheckoutProgress, useSystemProxy);
                 updated = true;
             }
             finally
@@ -1189,14 +1212,15 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
     /// <summary>
     /// 克隆Git仓库（只检出repo.json）
     /// 相当于 Repository.Clone(repoUrl, repoPath, options);
-    /// 用这个方法可以无视本地代理
+    /// 可通过配置选择是否使用系统代理
     /// </summary>
     /// <param name="repoUrl"></param>
     /// <param name="repoPath"></param>
     /// <param name="branchName"></param>
     /// <param name="onCheckoutProgress"></param>
     /// <exception cref="Exception"></exception>
-    private void CloneRepository(string repoUrl, string repoPath, string branchName, CheckoutProgressHandler? onCheckoutProgress)
+    private void CloneRepository(string repoUrl, string repoPath, string branchName,
+        CheckoutProgressHandler? onCheckoutProgress, bool useSystemProxy)
     {
         DirectoryHelper.DeleteReadOnlyDirectory(repoPath);
         Directory.CreateDirectory(repoPath);
@@ -1206,24 +1230,13 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
 
         try
         {
-            GitConfig(repo);
+            GitConfig(repo, useSystemProxy);
 
             // 添加远程源
             Remote remote = repo.Network.Remotes.Add("origin", repoUrl);
 
             // 只拉取指定分支
-            var fetchOptions = new FetchOptions
-            {
-                TagFetchMode = TagFetchMode.None,
-                ProxyOptions = { ProxyType = ProxyType.None },
-                Depth = 1, // 浅拉取，只获取最新的提交
-                CredentialsProvider = CreateCredentialsHandler(), // 添加凭据处理器
-                OnTransferProgress = progress =>
-                {
-                    onCheckoutProgress?.Invoke($"拉取对象 {progress.ReceivedObjects}/{progress.TotalObjects}", progress.ReceivedObjects, progress.TotalObjects);
-                    return true;
-                }
-            };
+            var fetchOptions = CreateFetchOptions(useSystemProxy, onCheckoutProgress);
             string refSpec = $"+refs/heads/{branchName}:refs/remotes/origin/{branchName}";
             Commands.Fetch(repo, remote.Name, new[] { refSpec }, fetchOptions, "初始化拉取");
 
@@ -1246,6 +1259,25 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
         {
             repo?.Dispose();
         }
+    }
+
+    private FetchOptions CreateFetchOptions(bool useSystemProxy, CheckoutProgressHandler? onCheckoutProgress)
+    {
+        var fetchOptions = new FetchOptions
+        {
+            TagFetchMode = TagFetchMode.None,
+            Depth = 1, // 浅拉取，只获取最新的提交
+            CredentialsProvider = CreateCredentialsHandler(), // 添加凭据处理器
+            OnTransferProgress = progress =>
+            {
+                onCheckoutProgress?.Invoke($"拉取对象 {progress.ReceivedObjects}/{progress.TotalObjects}",
+                    progress.ReceivedObjects, progress.TotalObjects);
+                return true;
+            }
+        };
+
+        fetchOptions.ProxyOptions.ProxyType = useSystemProxy ? ProxyType.Auto : ProxyType.None;
+        return fetchOptions;
     }
 
     /// <summary>
@@ -1645,7 +1677,7 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
         }
     }
 
-    private void GitConfig(Repository repo)
+    private void GitConfig(Repository repo, bool useSystemProxy)
     {
         // 设置 Git 配置
         // 1. 设置 core.longpaths 为 true
@@ -1654,9 +1686,12 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
         // 2. 添加 safe.directory *
         repo.Config.Set("safe.directory", "*");
 
-        // 3. 移除 http.proxy 和 https.proxy 配置
-        repo.Config.Unset("http.proxy");
-        repo.Config.Unset("https.proxy");
+        // 3. 根据配置决定是否禁用代理配置
+        if (!useSystemProxy)
+        {
+            repo.Config.Unset("http.proxy");
+            repo.Config.Unset("https.proxy");
+        }
     }
 
     /// <summary>
@@ -2151,8 +2186,30 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
             return;
         }
 
+        var normalizedPaths = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in paths)
+        {
+            if (!TryNormalizeSubscribedPath(path, out var normalizedPath, out _, out _, out _))
+            {
+                Toast.Warning($"忽略非法脚本路径：{path}");
+                continue;
+            }
+
+            if (seen.Add(normalizedPath))
+            {
+                normalizedPaths.Add(normalizedPath);
+            }
+        }
+
+        if (normalizedPaths.Count == 0)
+        {
+            Toast.Warning("订阅脚本路径全部非法");
+            return;
+        }
+
         // 保存订阅信息（按当前仓库存储到文件）
-        AddSubscribedPathsForCurrentRepo(paths);
+        AddSubscribedPathsForCurrentRepo(normalizedPaths);
 
         Toast.Information("获取最新仓库信息中...");
 
@@ -2220,21 +2277,36 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
         // }
 
         //顶层目录订阅时，展开 "pathing" 等顶层路径为具体子目录
-        List<string> newPaths = ExpandTopLevelPaths(paths, repoPath);
+        List<string> newPaths = ExpandTopLevelPaths(normalizedPaths, repoPath);
 
         // 从 Git 仓库检出文件到用户文件夹
         foreach (var path in newPaths)
         {
-            var (first, remainingPath) = GetFirstFolderAndRemainingPath(path);
+            if (!TryNormalizeSubscribedPath(path, out var normalizedPath, out var first, out var remainingPath, out var normalizeError))
+            {
+                Toast.Warning($"忽略非法脚本路径：{path} ({normalizeError})");
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(remainingPath))
+            {
+                Toast.Warning($"忽略顶层路径，避免覆盖根目录：{normalizedPath}");
+                continue;
+            }
+
             if (PathMapper.TryGetValue(first, out var userPath))
             {
-                var destPath = Path.Combine(userPath, remainingPath);
+                if (!TryResolveUserDestinationPath(userPath, remainingPath, out var destPath, out var destError))
+                {
+                    Toast.Warning($"非法目标路径：{normalizedPath} ({destError})");
+                    continue;
+                }
 
                 // 备份需要保存的文件
                 List<string> backupFiles = new List<string>();
                 if (first == "js") // 只对JS脚本进行备份
                 {
-                    backupFiles = BackupScriptFiles(path, repoPath);
+                    backupFiles = BackupScriptFiles(normalizedPath, repoPath);
                 }
 
                 // 如果目标路径存在，先删除
@@ -2248,7 +2320,7 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
                 }
 
                 // 从 Git 仓库检出文件或目录
-                CheckoutPath(repoPath, path, destPath);
+                CheckoutPath(repoPath, normalizedPath, destPath);
 
                 // 图标处理（仅对目录）
                 if (Directory.Exists(destPath))
@@ -2259,7 +2331,7 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
                 // 恢复备份的文件
                 if (first == "js" && backupFiles.Count > 0) // 只对JS脚本进行恢复
                 {
-                    RestoreScriptFiles(path, repoPath);
+                    RestoreScriptFiles(normalizedPath, repoPath);
                 }
 
                 // Resolving dependencies for JS scripts
@@ -2273,7 +2345,7 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
             }
             else
             {
-                Toast.Warning($"未知的脚本路径：{path}");
+                Toast.Warning($"未知的脚本路径：{normalizedPath}");
             }
         }
     }
@@ -2317,7 +2389,16 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
     private static void SetSubscribedPathsForCurrentRepo(List<string> paths)
     {
         var filePath = GetSubscriptionFilePath(GetCurrentRepoFolderName());
-        WriteSubscriptionFile(filePath, paths);
+        var normalized = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var path in paths)
+        {
+            if (TryNormalizeSubscribedPath(path, out var normalizedPath, out _, out _, out _))
+            {
+                normalized.Add(normalizedPath);
+            }
+        }
+
+        WriteSubscriptionFile(filePath, normalized.ToList());
     }
 
     /// <summary>
@@ -2327,8 +2408,17 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
     private static void AddSubscribedPathsForCurrentRepo(List<string> paths)
     {
         var existing = GetSubscribedPathsForCurrentRepo();
-        var merged = existing.Union(paths).ToList();
-        SetSubscribedPathsForCurrentRepo(merged);
+        var merged = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var path in existing.Concat(paths))
+        {
+            if (TryNormalizeSubscribedPath(path, out var normalizedPath, out _, out _, out _))
+            {
+                merged.Add(normalizedPath);
+            }
+        }
+
+        SetSubscribedPathsForCurrentRepo(merged.ToList());
     }
 
     /// <summary>
@@ -2526,29 +2616,30 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
             .OrderBy(path => path)
             .ToList();
 
-        var pathsToKeep = new HashSet<string>();
+        var pathsToKeep = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var path in allPaths)
         {
-            if (string.IsNullOrEmpty(path) || !path.Contains('/'))
+            if (!TryNormalizeSubscribedPath(path, out var normalizedPath, out var root, out var remainingPath, out _))
                 continue;
 
-            var root = path.Split('/')[0];
-            if (!validRoots.Contains(root))
+            if (string.IsNullOrWhiteSpace(remainingPath) || !validRoots.Contains(root))
                 continue;
 
-            var (_, remainingPath) = GetFirstFolderAndRemainingPath(path);
-            var userPath = Path.Combine(PathMapper[root], remainingPath);
+            if (!TryResolveUserDestinationPath(PathMapper[root], remainingPath, out var userPath, out _))
+                continue;
+
             if (!Directory.Exists(userPath) && !File.Exists(userPath))
                 continue;
 
             // 检查是否已被父路径覆盖
             bool isCoveredByParent = pathsToKeep.Any(p =>
-                path.StartsWith(p + "/") || path == p);
+                normalizedPath.StartsWith(p + "/", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalizedPath, p, StringComparison.OrdinalIgnoreCase));
 
             if (!isCoveredByParent)
             {
-                pathsToKeep.Add(path);
+                pathsToKeep.Add(normalizedPath);
             }
         }
 
@@ -2575,7 +2666,12 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
                                 var name = nodeObj["name"]?.ToString();
                                 if (!string.IsNullOrEmpty(name))
                                 {
-                                    var fullPath = string.IsNullOrEmpty(currentPath) ? name : $"{currentPath}/{name}";
+                                    var candidatePath = string.IsNullOrEmpty(currentPath) ? name : $"{currentPath}/{name}";
+                                    if (!TryNormalizeSubscribedPath(candidatePath, out var fullPath, out _, out _, out _))
+                                    {
+                                        continue;
+                                    }
+
                                     allAvailablePaths.Add(fullPath);
 
                                     if (nodeObj["children"] is JArray children)
@@ -2922,6 +3018,105 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
         }
     }
 
+    private static bool TryNormalizeSubscribedPath(
+        string? rawPath,
+        out string normalizedPath,
+        out string firstFolder,
+        out string remainingPath,
+        out string? error)
+    {
+        normalizedPath = string.Empty;
+        firstFolder = string.Empty;
+        remainingPath = string.Empty;
+        error = null;
+        if (string.IsNullOrWhiteSpace(rawPath))
+        {
+            error = "路径为空";
+            return false;
+        }
+
+        var trimmed = rawPath.Trim().Replace('\\', '/');
+        if (trimmed.StartsWith("/", StringComparison.Ordinal) ||
+            trimmed.StartsWith("\\", StringComparison.Ordinal) ||
+            trimmed.Contains(':') ||
+            Path.IsPathRooted(trimmed))
+        {
+            error = "不允许绝对路径";
+            return false;
+        }
+
+        var segments = trimmed.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+        {
+            error = "路径为空";
+            return false;
+        }
+
+        var normalizedSegments = new List<string>(segments.Length);
+        foreach (var rawSegment in segments)
+        {
+            var segment = rawSegment.Trim();
+            if (string.IsNullOrWhiteSpace(segment) ||
+                segment is "." or ".." ||
+                segment.Contains('/') ||
+                segment.Contains('\\') ||
+                segment.Contains(':') ||
+                segment.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            {
+                error = $"路径片段非法: {segment}";
+                return false;
+            }
+
+            normalizedSegments.Add(segment);
+        }
+
+        var rootCandidate = normalizedSegments[0];
+        var mappedRoot = PathMapper.Keys.FirstOrDefault(key => string.Equals(key, rootCandidate, StringComparison.OrdinalIgnoreCase));
+        if (mappedRoot == null)
+        {
+            error = $"未知路径根: {rootCandidate}";
+            return false;
+        }
+
+        firstFolder = mappedRoot;
+
+        remainingPath = string.Join(Path.DirectorySeparatorChar, normalizedSegments.Skip(1));
+        normalizedPath = string.Join('/', normalizedSegments);
+        return true;
+    }
+
+    private static bool TryResolveUserDestinationPath(string rootPath, string remainingPath, out string destinationPath, out string? error)
+    {
+        destinationPath = string.Empty;
+        error = null;
+        var rootFullPath = Path.GetFullPath(rootPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var candidate = string.IsNullOrWhiteSpace(remainingPath)
+            ? rootFullPath
+            : Path.GetFullPath(Path.Combine(rootFullPath, remainingPath));
+        if (!IsSubPathOf(rootFullPath, candidate))
+        {
+            error = "目标路径越界";
+            return false;
+        }
+
+        destinationPath = candidate;
+        return true;
+    }
+
+    private static bool IsSubPathOf(string rootPath, string candidatePath)
+    {
+        var normalizedRoot = Path.GetFullPath(rootPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var normalizedCandidate = Path.GetFullPath(candidatePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (string.Equals(normalizedRoot, normalizedCandidate, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var rootWithSeparator = normalizedRoot + Path.DirectorySeparatorChar;
+        return normalizedCandidate.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static (string firstFolder, string remainingPath) GetFirstFolderAndRemainingPath(string path)
     {
         // 检查路径是否为空或仅包含部分字符
@@ -3144,7 +3339,25 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
     {
         var backupFiles = new List<string>();
         var tempBackupPath = Global.Absolute("User\\Temp");
-        var scriptPathSafe = scriptPath;
+        if (!TryNormalizeSubscribedPath(scriptPath, out var normalizedScriptPath, out var first, out var remainingPath, out var normalizeError))
+        {
+            _logger.LogWarning("忽略非法脚本备份路径 {Path}: {Error}", scriptPath, normalizeError);
+            return backupFiles;
+        }
+
+        if (!PathMapper.TryGetValue(first, out var userPath))
+        {
+            _logger.LogWarning($"未知的脚本路径映射: {normalizedScriptPath}");
+            return backupFiles;
+        }
+
+        if (!TryResolveUserDestinationPath(userPath, remainingPath, out var scriptUserPath, out var destinationError))
+        {
+            _logger.LogWarning("脚本用户目录路径非法 {Path}: {Error}", normalizedScriptPath, destinationError);
+            return backupFiles;
+        }
+
+        var scriptPathSafe = normalizedScriptPath.Replace('/', Path.DirectorySeparatorChar);
         var backupScriptDir = Path.Combine(tempBackupPath, scriptPathSafe);
         try
         {
@@ -3162,17 +3375,17 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
             if (isGitRepo)
             {
                 // 从Git仓库读取
-                manifestContent = ReadFileFromGitRepository(repoPath, $"{scriptPath}/manifest.json");
+                manifestContent = ReadFileFromGitRepository(repoPath, $"{normalizedScriptPath}/manifest.json");
                 if (manifestContent == null)
                 {
-                    _logger.LogWarning($"脚本manifest文件不存在: {scriptPath}/manifest.json");
+                    _logger.LogWarning($"脚本manifest文件不存在: {normalizedScriptPath}/manifest.json");
                     return backupFiles;
                 }
             }
             else
             {
                 // 文件式仓库：从文件系统读取
-                var scriptManifestPath = Path.Combine(repoPath, scriptPath, "manifest.json");
+                var scriptManifestPath = Path.Combine(repoPath, normalizedScriptPath.Replace('/', Path.DirectorySeparatorChar), "manifest.json");
                 if (!File.Exists(scriptManifestPath))
                 {
                     _logger.LogWarning($"脚本manifest文件不存在: {scriptManifestPath}");
@@ -3186,19 +3399,9 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
 
             if (manifest.SavedFiles == null || manifest.SavedFiles.Length == 0)
             {
-                _logger.LogInformation($"脚本 {scriptPath} 没有需要保存的文件");
+                _logger.LogInformation($"脚本 {normalizedScriptPath} 没有需要保存的文件");
                 return backupFiles;
             }
-
-            // 获取脚本在用户目录中的路径
-            var (first, remainingPath) = GetFirstFolderAndRemainingPath(scriptPath);
-            if (!PathMapper.TryGetValue(first, out var userPath))
-            {
-                _logger.LogWarning($"未知的脚本路径映射: {scriptPath}");
-                return backupFiles;
-            }
-
-            var scriptUserPath = Path.Combine(userPath, remainingPath);
 
             // 备份每个需要保存的文件
             foreach (var savedFileRaw in manifest.SavedFiles)
@@ -3274,7 +3477,25 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
     private void RestoreScriptFiles(string scriptPath, string repoPath)
     {
         var tempBackupPath = Global.Absolute("User\\Temp");
-        var scriptPathSafe = scriptPath;
+        if (!TryNormalizeSubscribedPath(scriptPath, out var normalizedScriptPath, out var first, out var remainingPath, out var normalizeError))
+        {
+            _logger.LogWarning("忽略非法脚本恢复路径 {Path}: {Error}", scriptPath, normalizeError);
+            return;
+        }
+
+        if (!PathMapper.TryGetValue(first, out var userPath))
+        {
+            _logger.LogWarning($"未知的脚本路径映射: {normalizedScriptPath}");
+            return;
+        }
+
+        if (!TryResolveUserDestinationPath(userPath, remainingPath, out var scriptUserPath, out var destinationError))
+        {
+            _logger.LogWarning("脚本用户目录路径非法 {Path}: {Error}", normalizedScriptPath, destinationError);
+            return;
+        }
+
+        var scriptPathSafe = normalizedScriptPath.Replace('/', Path.DirectorySeparatorChar);
         var backupScriptDir = Path.Combine(tempBackupPath, scriptPathSafe);
         try
         {
@@ -3287,17 +3508,17 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
             if (isGitRepo)
             {
                 // 从Git仓库读取
-                manifestContent = ReadFileFromGitRepository(repoPath, $"{scriptPath}/manifest.json");
+                manifestContent = ReadFileFromGitRepository(repoPath, $"{normalizedScriptPath}/manifest.json");
                 if (manifestContent == null)
                 {
-                    _logger.LogWarning($"脚本manifest文件不存在: {scriptPath}/manifest.json");
+                    _logger.LogWarning($"脚本manifest文件不存在: {normalizedScriptPath}/manifest.json");
                     return;
                 }
             }
             else
             {
                 // 文件式仓库：从文件系统读取
-                var scriptManifestPath = Path.Combine(repoPath, scriptPath, "manifest.json");
+                var scriptManifestPath = Path.Combine(repoPath, normalizedScriptPath.Replace('/', Path.DirectorySeparatorChar), "manifest.json");
                 if (!File.Exists(scriptManifestPath))
                 {
                     _logger.LogWarning($"脚本manifest文件不存在: {scriptManifestPath}");
@@ -3311,19 +3532,9 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
 
             if (manifest.SavedFiles == null || manifest.SavedFiles.Length == 0)
             {
-                _logger.LogInformation($"脚本 {scriptPath} 没有需要恢复的文件");
+                _logger.LogInformation($"脚本 {normalizedScriptPath} 没有需要恢复的文件");
                 return;
             }
-
-            // 获取脚本在用户目录中的路径
-            var (first, remainingPath) = GetFirstFolderAndRemainingPath(scriptPath);
-            if (!PathMapper.TryGetValue(first, out var userPath))
-            {
-                _logger.LogWarning($"未知的脚本路径映射: {scriptPath}");
-                return;
-            }
-
-            var scriptUserPath = Path.Combine(userPath, remainingPath);
 
             // 还原所有备份文件
             if (Directory.Exists(backupScriptDir))

@@ -22,14 +22,11 @@ using BetterGenshinImpact.Service.Notification;
 using BetterGenshinImpact.Service.Notification.Model.Enum;
 using BetterGenshinImpact.View.Windows;
 using CommunityToolkit.Mvvm.Input;
-using Newtonsoft.Json;
 using Wpf.Ui.Controls;
 using Wpf.Ui.Violeta.Controls;
 using System.Windows.Controls;
-using ABI.Windows.UI.UIAutomation;
 using Wpf.Ui;
 using StackPanel = Wpf.Ui.Controls.StackPanel;
-using BetterGenshinImpact.Core.Config;
 using BetterGenshinImpact.Core.Script.Project;
 using BetterGenshinImpact.Service.Interface;
 using TextBlock = Wpf.Ui.Controls.TextBlock;
@@ -40,10 +37,9 @@ namespace BetterGenshinImpact.ViewModel.Pages;
 public partial class OneDragonFlowViewModel : ViewModel
 {
     private readonly ILogger<OneDragonFlowViewModel> _logger = App.GetLogger<OneDragonFlowViewModel>();
+    private bool _isHotReloadSubscribed;
 
-    public static readonly string OneDragonFlowConfigFolder = Global.Absolute(@"User\OneDragon");
-
-    private readonly ScriptService _scriptService;
+    public bool EnableHotReload { get; set; } = true;
 
     [ObservableProperty] private ObservableCollection<OneDragonTaskItem> _taskList =
     [
@@ -103,7 +99,7 @@ public partial class OneDragonFlowViewModel : ViewModel
             }
 
             ScriptGroups.Clear();
-            foreach (var group in _scriptGroupsdefault)
+            foreach (var group in ScriptGroupsdefault)
             {
                 ScriptGroups.Add(group);
             }
@@ -347,44 +343,67 @@ public partial class OneDragonFlowViewModel : ViewModel
     public override void OnNavigatedTo()
     {
         InitConfigList();
+        SubscribeHotReload();
+    }
+
+    public override void OnNavigatedFrom()
+    {
+        UnsubscribeHotReload();
+    }
+
+    private void SubscribeHotReload()
+    {
+        if (!EnableHotReload || _isHotReloadSubscribed)
+        {
+            return;
+        }
+
+        OneDragonConfigHotReloadService.ConfigsChanged += OnConfigsChanged;
+        _isHotReloadSubscribed = true;
+    }
+
+    private void UnsubscribeHotReload()
+    {
+        if (!_isHotReloadSubscribed)
+        {
+            return;
+        }
+
+        OneDragonConfigHotReloadService.ConfigsChanged -= OnConfigsChanged;
+        _isHotReloadSubscribed = false;
+    }
+
+    private void OnConfigsChanged()
+    {
+        UIDispatcherHelper.BeginInvoke(() =>
+        {
+            try
+            {
+                InitConfigList();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "一条龙配置热加载失败");
+            }
+        });
     }
 
     private void InitConfigList()
     {
-        Directory.CreateDirectory(OneDragonFlowConfigFolder);
-        // 读取文件夹内所有json配置，按创建时间正序
-        var configFiles = Directory.GetFiles(OneDragonFlowConfigFolder, "*.json");
-        var configs = new List<OneDragonFlowConfig>();
-
+        var configs = OneDragonConfigStore.LoadAll().ToList();
         OneDragonFlowConfig? selected = null;
-        foreach (var configFile in configFiles)
+        foreach (var config in configs)
         {
-            var json = File.ReadAllText(configFile);
-            var config = JsonConvert.DeserializeObject<OneDragonFlowConfig>(json);
-            if (config != null)
+            if (config.Name == TaskContext.Instance().Config.SelectedOneDragonFlowConfigName)
             {
-                configs.Add(config);
-                if (config.Name == TaskContext.Instance().Config.SelectedOneDragonFlowConfigName)
-                {
-                    selected = config;
-                }
+                selected = config;
+                break;
             }
         }
 
-        if (selected == null)
+        if (selected == null && configs.Count > 0)
         {
-            if (configs.Count > 0)
-            {
-                selected = configs[0];
-            }
-            else
-            {
-                selected = new OneDragonFlowConfig
-                {
-                    Name = "默认配置"
-                };
-                configs.Add(selected);
-            }
+            selected = configs[0];
         }
 
         ConfigList.Clear();
@@ -521,10 +540,11 @@ public partial class OneDragonFlowViewModel : ViewModel
 
         try
         {
-            Directory.CreateDirectory(OneDragonFlowConfigFolder);
-            var json = JsonConvert.SerializeObject(config, Formatting.Indented);
-            var filePath = Path.Combine(OneDragonFlowConfigFolder, $"{config.Name}.json");
-            File.WriteAllText(filePath, json);
+            if (!OneDragonConfigStore.Save(config))
+            {
+                _logger.LogDebug("保存配置时失败");
+                Toast.Error("保存配置时失败");
+            }
         }
         catch (Exception e)
         {
@@ -545,6 +565,11 @@ public partial class OneDragonFlowViewModel : ViewModel
         }
         _autoRun = false;
         //
+        if (!TaskContext.Instance().Config.ScriptConfig.EnableCommandLineStart)
+        {
+            return;
+        }
+
         var args = Environment.GetCommandLineArgs();
         if (args.Length > 1 && args[1].Contains("startOneDragon"))
         {
@@ -757,11 +782,10 @@ public partial class OneDragonFlowViewModel : ViewModel
 
         try
         {
-            // 删除对应的JSON文件
-            var configFile = Path.Combine(OneDragonFlowConfigFolder, $"{SelectedConfig.Name}.json");
-            if (File.Exists(configFile))
+            if (!OneDragonConfigStore.Delete(SelectedConfig.Name))
             {
-                File.Delete(configFile);
+                Toast.Error("删除配置时失败");
+                return;
             }
 
             // 从列表中移除
@@ -835,15 +859,11 @@ public partial class OneDragonFlowViewModel : ViewModel
             
             // 更新配置名称
             SelectedConfig.Name = newName;
-
-            // 先写入新文件
-            WriteConfig(SelectedConfig);
-
-            // 写入成功后再删除旧文件
-            var oldConfigFile = Path.Combine(OneDragonFlowConfigFolder, $"{oldName}.json");
-            if (File.Exists(oldConfigFile))
+            if (!OneDragonConfigStore.Rename(oldName, SelectedConfig))
             {
-                File.Delete(oldConfigFile);
+                SelectedConfig.Name = oldName;
+                Toast.Error("重命名配置时失败");
+                return;
             }
 
             // 更新全局配置名称

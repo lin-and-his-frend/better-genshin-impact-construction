@@ -44,13 +44,27 @@ public class FileAccessBridge
         try
         {
             var fullPath = Path.GetFullPath(path);
-            var normalizedPath = fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            return normalizedPath.StartsWith(_normalizedAllowedPath, StringComparison.OrdinalIgnoreCase);
+            return IsSubPathOf(_normalizedAllowedPath, fullPath);
         }
         catch
         {
             return false;
         }
+    }
+
+    private static bool IsSubPathOf(string rootPath, string targetPath)
+    {
+        var normalizedRoot = Path.GetFullPath(rootPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var normalizedTarget = Path.GetFullPath(targetPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (string.Equals(normalizedRoot, normalizedTarget, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var rootWithSeparator = normalizedRoot + Path.DirectorySeparatorChar;
+        return normalizedTarget.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase);
     }
 
     public string ReadFile(string relativePath)

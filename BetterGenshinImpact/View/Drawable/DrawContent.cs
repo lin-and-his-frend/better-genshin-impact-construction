@@ -24,14 +24,14 @@ public class DrawContent
     {
         if (RectList.TryGetValue(key, out var prevRect))
         {
-            if (prevRect.Count == 0 && newRect.Equals(prevRect[0]))
+            if (prevRect.Count > 0 && newRect.Equals(prevRect[0]))
             {
                 return;
             }
         }
 
         RectList[key] = [newRect];
-        MaskWindow.Instance().Refresh();
+        RequestRefresh();
     }
 
     public virtual void PutOrRemoveRectList(string key, List<RectDrawable>? list)
@@ -68,7 +68,7 @@ public class DrawContent
 
         if (changed)
         {
-            MaskWindow.Instance().Refresh();
+            RequestRefresh();
         }
     }
 
@@ -77,7 +77,7 @@ public class DrawContent
         if (RectList.TryGetValue(key, out _))
         {
             RectList.TryRemove(key, out _);
-            MaskWindow.Instance().Refresh();
+            RequestRefresh();
         }
     }
 
@@ -85,14 +85,14 @@ public class DrawContent
     {
         if (LineList.TryGetValue(key, out var prev))
         {
-            if (prev.Count == 0 && newLine.Equals(prev[0]))
+            if (prev.Count > 0 && newLine.Equals(prev[0]))
             {
                 return;
             }
         }
 
         LineList[key] = [newLine];
-        MaskWindow.Instance().Refresh();
+        RequestRefresh();
     }
 
 
@@ -101,7 +101,7 @@ public class DrawContent
         if (LineList.TryGetValue(key, out _))
         {
             LineList.TryRemove(key, out _);
-            MaskWindow.Instance().Refresh();
+            RequestRefresh();
         }
     }
 
@@ -135,7 +135,7 @@ public class DrawContent
 
         if (changed)
         {
-            MaskWindow.Instance().Refresh();
+            RequestRefresh();
         }
     }
 
@@ -151,6 +151,12 @@ public class DrawContent
         RectList.Clear();
         TextList.Clear();
         LineList.Clear();
-        MaskWindow.Instance().Refresh();
+        RequestRefresh();
+    }
+
+    private static void RequestRefresh()
+    {
+        var maskWindow = MaskWindow.InstanceNullable();
+        maskWindow?.Refresh();
     }
 }

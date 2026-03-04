@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -21,6 +22,8 @@ internal sealed class OfficialSiteKnowledgeService
     private const int MaxIndexedPageCount = 260;
     private const int MinPreferredPageCount = 30;
     private const int MaxLinkExpansionSources = 72;
+    private const int ParallelRankThreshold = 80;
+    private static readonly int RankMaxDegreeOfParallelism = Math.Clamp(Environment.ProcessorCount, 2, 8);
     private static readonly Uri RootSiteUri = new("https://www.bettergi.com/");
     private static readonly TimeSpan RefreshTtl = TimeSpan.FromMinutes(30);
     private static readonly HttpClient OfficialSiteHttpClient = HttpClientFactory.GetClient(
@@ -70,6 +73,22 @@ internal sealed class OfficialSiteKnowledgeService
             catch (Exception ex)
             {
                 _logger.LogDebug(ex, "MCP 官网索引预热失败");
+            }
+        });
+    }
+
+    public void ForceRefreshInBackground()
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                await EnsureIndexedAsync(cts.Token, forceRefresh: true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "MCP 官网索引强制刷新失败");
             }
         });
     }
@@ -163,9 +182,9 @@ internal sealed class OfficialSiteKnowledgeService
         return (links, related, _pages.Count, warning);
     }
 
-    private async Task<string?> EnsureIndexedAsync(CancellationToken ct)
+    private async Task<string?> EnsureIndexedAsync(CancellationToken ct, bool forceRefresh = false)
     {
-        if (_pages.Count > 0 && DateTimeOffset.UtcNow - _pagesUpdatedUtc < RefreshTtl)
+        if (!forceRefresh && _pages.Count > 0 && DateTimeOffset.UtcNow - _pagesUpdatedUtc < RefreshTtl)
         {
             return null;
         }
@@ -173,7 +192,7 @@ internal sealed class OfficialSiteKnowledgeService
         await _refreshLock.WaitAsync(ct);
         try
         {
-            if (_pages.Count > 0 && DateTimeOffset.UtcNow - _pagesUpdatedUtc < RefreshTtl)
+            if (!forceRefresh && _pages.Count > 0 && DateTimeOffset.UtcNow - _pagesUpdatedUtc < RefreshTtl)
             {
                 return null;
             }
@@ -315,20 +334,46 @@ internal sealed class OfficialSiteKnowledgeService
             return EmptyHits;
         }
 
-        var hits = new List<OfficialDocHit>(_pages.Count);
-        foreach (var page in _pages)
+        if (_pages.Count < ParallelRankThreshold)
+        {
+            var sequentialHits = new List<OfficialDocHit>(_pages.Count);
+            foreach (var page in _pages)
+            {
+                var score = Score(page, normalizedQuery, tokens);
+                if (score <= 0d)
+                {
+                    continue;
+                }
+
+                var snippet = BuildSnippet(page, normalizedQuery, tokens);
+                sequentialHits.Add(new OfficialDocHit(page.Title, page.Url, snippet, score));
+            }
+
+            return sequentialHits
+                .OrderByDescending(h => h.Score)
+                .ThenBy(h => h.Title, StringComparer.OrdinalIgnoreCase)
+                .Take(limit)
+                .ToList();
+        }
+
+        var bag = new ConcurrentBag<OfficialDocHit>();
+        var options = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = RankMaxDegreeOfParallelism
+        };
+        Parallel.ForEach(_pages, options, page =>
         {
             var score = Score(page, normalizedQuery, tokens);
             if (score <= 0d)
             {
-                continue;
+                return;
             }
 
             var snippet = BuildSnippet(page, normalizedQuery, tokens);
-            hits.Add(new OfficialDocHit(page.Title, page.Url, snippet, score));
-        }
+            bag.Add(new OfficialDocHit(page.Title, page.Url, snippet, score));
+        });
 
-        return hits
+        return bag
             .OrderByDescending(h => h.Score)
             .ThenBy(h => h.Title, StringComparer.OrdinalIgnoreCase)
             .Take(limit)
@@ -440,7 +485,7 @@ internal sealed class OfficialSiteKnowledgeService
             return string.Empty;
         }
 
-        var normalized = WebUtility.HtmlDecode(text.Trim()).ToLowerInvariant();
+        var normalized = SafeHtmlDecode(text.Trim()).ToLowerInvariant();
         normalized = MultiSpaceRegex.Replace(normalized, " ");
         return normalized;
     }
@@ -575,7 +620,7 @@ internal sealed class OfficialSiteKnowledgeService
             return string.Empty;
         }
 
-        var title = WebUtility.HtmlDecode(match.Groups["title"].Value);
+        var title = SafeHtmlDecode(match.Groups["title"].Value);
         title = MultiSpaceRegex.Replace(title, " ").Trim();
         return title;
     }
@@ -718,7 +763,7 @@ internal sealed class OfficialSiteKnowledgeService
         text = StyleTagRegex.Replace(text, " ");
         text = NoScriptTagRegex.Replace(text, " ");
         text = HtmlTagRegex.Replace(text, " ");
-        text = WebUtility.HtmlDecode(text);
+        text = SafeHtmlDecode(text);
         text = MultiSpaceRegex.Replace(text, " ").Trim();
         return text;
     }
@@ -762,7 +807,7 @@ internal sealed class OfficialSiteKnowledgeService
                 continue;
             }
 
-            var normalized = MultiSpaceRegex.Replace(WebUtility.HtmlDecode(content).Trim(), " ");
+            var normalized = MultiSpaceRegex.Replace(SafeHtmlDecode(content).Trim(), " ");
             if (!string.IsNullOrWhiteSpace(normalized))
             {
                 return normalized;
@@ -905,6 +950,107 @@ internal sealed class OfficialSiteKnowledgeService
         }
 
         return false;
+    }
+
+    private static string SafeHtmlDecode(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return string.Empty;
+        }
+
+        var sanitized = Regex.Replace(input, @"&#(?:(?<dec>\d+)|x(?<hex>[0-9a-fA-F]+));", static match =>
+        {
+            try
+            {
+                var decGroup = match.Groups["dec"];
+                var hexGroup = match.Groups["hex"];
+                int codePoint;
+                if (decGroup.Success)
+                {
+                    if (!int.TryParse(decGroup.Value, out codePoint))
+                    {
+                        return " ";
+                    }
+                }
+                else if (hexGroup.Success)
+                {
+                    if (!int.TryParse(hexGroup.Value, System.Globalization.NumberStyles.HexNumber, null, out codePoint))
+                    {
+                        return " ";
+                    }
+                }
+                else
+                {
+                    return " ";
+                }
+
+                if (codePoint is < 0 or > 0x10FFFF)
+                {
+                    return " ";
+                }
+
+                if (codePoint is >= 0xD800 and <= 0xDFFF)
+                {
+                    return " ";
+                }
+
+                return match.Value;
+            }
+            catch
+            {
+                return " ";
+            }
+        });
+
+        try
+        {
+            var decoded = WebUtility.HtmlDecode(sanitized);
+            return RemoveUnpairedSurrogates(decoded);
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return RemoveUnpairedSurrogates(sanitized);
+        }
+    }
+
+    private static string RemoveUnpairedSurrogates(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return string.Empty;
+        }
+
+        var builder = new StringBuilder(text.Length);
+        for (var i = 0; i < text.Length; i++)
+        {
+            var ch = text[i];
+            if (char.IsHighSurrogate(ch))
+            {
+                if (i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                {
+                    builder.Append(ch);
+                    builder.Append(text[i + 1]);
+                    i++;
+                }
+                else
+                {
+                    builder.Append(' ');
+                }
+
+                continue;
+            }
+
+            if (char.IsLowSurrogate(ch))
+            {
+                builder.Append(' ');
+                continue;
+            }
+
+            builder.Append(ch);
+        }
+
+        return builder.ToString();
     }
 
     private sealed class DocPage

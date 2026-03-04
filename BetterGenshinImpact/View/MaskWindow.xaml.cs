@@ -52,6 +52,7 @@ public partial class MaskWindow : Window
     private MaskWindowConfig? _maskWindowConfig;
     private MapLabelSearchWindow? _mapLabelSearchWindow;
     private CancellationTokenSource? _mapLabelCategorySelectCts;
+    private int _refreshScheduled;
 
     static MaskWindow()
     {
@@ -233,7 +234,7 @@ public partial class MaskWindow : Window
     {
         if (e.PropertyName == nameof(MaskWindowConfig.OverlayLayoutEditEnabled))
         {
-            Dispatcher.Invoke(UpdateClickThroughState);
+            RunOnUiThread(UpdateClickThroughState);
         }
     }
 
@@ -242,14 +243,14 @@ public partial class MaskWindow : Window
         if (e.PropertyName == nameof(MaskWindowViewModel.IsInBigMapUi) ||
             e.PropertyName == nameof(MaskWindowViewModel.IsMapPointPickerOpen))
         {
-            Dispatcher.Invoke(UpdateClickThroughState);
+            RunOnUiThread(UpdateClickThroughState);
         }
 
         if (e.PropertyName == nameof(MaskWindowViewModel.IsMapPointPickerOpen))
         {
             if (_viewModel?.IsMapPointPickerOpen != true && _mapLabelSearchWindow != null)
             {
-                Dispatcher.Invoke(() => _mapLabelSearchWindow.Hide());
+                RunOnUiThread(() => _mapLabelSearchWindow.Hide());
             }
         }
 
@@ -426,19 +427,68 @@ public partial class MaskWindow : Window
 
     public void Refresh()
     {
-        Dispatcher.Invoke(InvalidateVisual);
+        if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+        {
+            return;
+        }
+
+        if (Interlocked.Exchange(ref _refreshScheduled, 1) == 1)
+        {
+            return;
+        }
+
+        void Invalidate()
+        {
+            try
+            {
+                InvalidateVisual();
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _refreshScheduled, 0);
+            }
+        }
+
+        if (Dispatcher.CheckAccess())
+        {
+            Invalidate();
+            return;
+        }
+
+        try
+        {
+            _ = Dispatcher.BeginInvoke(DispatcherPriority.Render, (Action)Invalidate);
+        }
+        catch
+        {
+            Interlocked.Exchange(ref _refreshScheduled, 0);
+        }
     }
 
     public void Invoke(Action action)
     {
         try
         {
-            Dispatcher.Invoke(action);
+            if (Dispatcher.CheckAccess())
+            {
+                action();
+                return;
+            }
+
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+            {
+                return;
+            }
+
+            Dispatcher.Invoke(action, DispatcherPriority.Send);
         }
         catch (TaskCanceledException)
         {
         }
         catch (OperationCanceledException)
+        {
+        }
+        catch (InvalidOperationException)
         {
         }
     }
@@ -605,6 +655,22 @@ public partial class MaskWindow : Window
         }
 
         return null;
+    }
+
+    private void RunOnUiThread(Action action, DispatcherPriority priority = DispatcherPriority.Background)
+    {
+        if (Dispatcher.CheckAccess())
+        {
+            action();
+            return;
+        }
+
+        if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+        {
+            return;
+        }
+
+        _ = Dispatcher.BeginInvoke(priority, action);
     }
 }
 

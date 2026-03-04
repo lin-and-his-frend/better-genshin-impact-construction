@@ -52,4 +52,10 @@ public partial class AutoFishingConfig : ObservableObject
     /// </summary>
     [ObservableProperty]
     private string _torchDllFullPath = @"C:\torch\lib\torch_cpu.dll";
+
+    /// <summary>
+    /// 在关键判断节点保存调试截图（开发者）
+    /// </summary>
+    [ObservableProperty]
+    private bool _saveScreenshotOnKeyTick = false;
 }

@@ -17,7 +17,7 @@ public partial class WebRemoteConfig : ObservableObject
     private bool _enabled = false;
 
     /// <summary>
-    /// 允许局域网访问（监听所有网卡）
+    /// 允许第三方访问（优先监听 0.0.0.0 与 IPv6 [::]）
     /// </summary>
     [ObservableProperty]
     private bool _lanEnabled = false;
@@ -29,10 +29,10 @@ public partial class WebRemoteConfig : ObservableObject
     private int _port = 50000;
 
     /// <summary>
-    /// 启用鉴权
+    /// 历史字段（兼容旧配置）。Web 远程控制现为强制鉴权，此字段不再作为开关使用。
     /// </summary>
     [ObservableProperty]
-    private bool _authEnabled = false;
+    private bool _authEnabled = true;
 
     /// <summary>
     /// Web 登录用户名
@@ -57,6 +57,13 @@ public partial class WebRemoteConfig : ObservableObject
     /// </summary>
     [ObservableProperty]
     private bool _screenStreamEnabled = false;
+
+    /// <summary>
+    /// 允许高级配置接口（/api/config/get、/api/config/set）
+    /// 默认关闭，避免通用反射路径被远程滥用
+    /// </summary>
+    [ObservableProperty]
+    private bool _allowAdvancedConfigApi = false;
 
     /// <summary>
     /// 允许将遮罩日志转发给 AI 接口

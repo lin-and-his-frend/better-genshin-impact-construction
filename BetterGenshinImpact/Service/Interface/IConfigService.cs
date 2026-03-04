@@ -11,5 +11,7 @@ namespace BetterGenshinImpact.Service.Interface
         AllConfig Read();
 
         void Write(AllConfig config);
+
+        bool ReloadFromStorage();
     }
 }

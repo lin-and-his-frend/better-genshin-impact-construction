@@ -20,6 +20,7 @@ using BetterGenshinImpact.Service.Interface;
 using BetterGenshinImpact.Service.Notification;
 using BetterGenshinImpact.Service.Notifier;
 using BetterGenshinImpact.Service.Remote;
+using BetterGenshinImpact.Service.Ai;
 using BetterGenshinImpact.View;
 using BetterGenshinImpact.View.Pages;
 using BetterGenshinImpact.ViewModel;
@@ -59,11 +60,7 @@ public partial class App : Application
         .ConfigureServices(
             (context, services) =>
             {
-                EnsureConfigMigrationChoice();
-                UserCache.Initialize();
-
-                // 诊断：检查数据库状态
-                LogDatabaseStatus();
+                RunEarlyStartupPreparation();
 
                 // 提前初始化配置
                 var configService = new ConfigService();
@@ -134,6 +131,7 @@ public partial class App : Application
                 services.AddSingleton<NotifyIconViewModel>();
 
                 // Views
+                services.AddView<AiChatPage, AiChatViewModel>();
                 services.AddView<HomePage, HomePageViewModel>();
                 services.AddView<ScriptControlPage, ScriptControlViewModel>();
                 services.AddView<TriggerSettingsPage, TriggerSettingsPageViewModel>();
@@ -165,12 +163,17 @@ public partial class App : Application
                 services.AddSingleton<TaskTriggerDispatcher>();
                 services.AddSingleton<NotificationService>();
                 services.AddHostedService(sp => sp.GetRequiredService<NotificationService>());
+                services.AddHostedService<ConfigHotReloadService>();
+                services.AddHostedService<OneDragonConfigHotReloadService>();
                 services.AddSingleton<NotifierManager>();
                 services.AddSingleton<IScriptService, ScriptService>();
+                services.AddSingleton<AiChatService>();
                 services.AddSingleton<IAiLogSink, NullAiLogSink>();
+                services.AddSingleton<WebAiBridgeService>();
                 services.AddSingleton<WebRemoteService>();
                 services.AddHostedService(sp => sp.GetRequiredService<WebRemoteService>());
                 services.AddSingleton<IMcpRequestHandler, McpRequestHandler>();
+                services.AddSingleton<McpLocalClient>();
                 services.AddSingleton<McpService>();
                 services.AddHostedService(sp => sp.GetRequiredService<McpService>());
                 services.AddSingleton<AiLogRelayService>();
@@ -236,6 +239,7 @@ public partial class App : Application
         {
             // 分配控制台窗口以支持控制台输出
             ConsoleHelper.AllocateConsole("BetterGI Console");
+            EnsureConfigMigrationChoice();
             RegisterEvents();
             await _host.StartAsync();
             ServerTimeHelper.Initialize(_host.Services.GetRequiredService<IServerTimeProvider>());
@@ -373,6 +377,27 @@ public partial class App : Application
 
     private static int _configMigrationChecked;
 
+    private static void RunEarlyStartupPreparation()
+    {
+        try
+        {
+            UserCache.Initialize();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"UserCache.Initialize failed: {ex.Message}");
+        }
+
+        try
+        {
+            LogDatabaseStatus();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"LogDatabaseStatus failed: {ex.Message}");
+        }
+    }
+
     private static void LogDatabaseStatus()
     {
         try
@@ -389,9 +414,9 @@ public partial class App : Application
                 var fileInfo = new FileInfo(dbPath);
                 ConsoleHelper.WriteLine($"数据库大小: {fileInfo.Length / 1024.0:F2} KB");
 
-                // 检查是否有config.json在数据库中
-                var hasConfig = UserStorage.Exists("config.json");
-                ConsoleHelper.WriteLine($"config.json在数据库中: {hasConfig}");
+                // 检查主配置是否在数据库中
+                var hasConfig = UserStorage.MainConfigExists();
+                ConsoleHelper.WriteLine($"主配置在数据库中: {hasConfig}");
 
                 // 列出数据库中的文件数量
                 var entries = UserStorage.ListEntries();

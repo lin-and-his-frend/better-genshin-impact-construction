@@ -299,7 +299,7 @@ public partial class ScriptRepoWindow
                     double progressPercentage = totalSteps > 0 ? Math.Min(100, (double)steps / totalSteps * 100) : 0;
                     UpdateProgressValue = (int)progressPercentage;
                     UpdateProgressText = $"{path}";
-                }));
+                }, Config.UseSystemProxyForRepoUpdate));
 
             // 更新结果提示
             if (updated)

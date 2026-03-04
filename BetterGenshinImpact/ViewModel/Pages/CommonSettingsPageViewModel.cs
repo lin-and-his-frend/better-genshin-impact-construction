@@ -3,6 +3,7 @@ using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
@@ -47,9 +48,11 @@ namespace BetterGenshinImpact.ViewModel.Pages;
 public partial class CommonSettingsPageViewModel : ViewModel
 {
     private readonly INavigationService _navigationService;
+    private readonly IConfigService _configService;
 
     private readonly NotificationService _notificationService;
     private readonly TpConfig _tpConfig = TaskContext.Instance().Config.TpConfig;
+    private bool _isMcpRiskPromptBusy;
 
     private string _selectedArea = string.Empty;
 
@@ -67,13 +70,19 @@ public partial class CommonSettingsPageViewModel : ViewModel
     public CommonSettingsPageViewModel(IConfigService configService, INavigationService navigationService,
         NotificationService notificationService)
     {
+        _configService = configService;
         Config = configService.Get();
         _navigationService = navigationService;
         _notificationService = notificationService;
+        Config.McpConfig.PropertyChanged += OnMcpConfigPropertyChanged;
+        Config.ScriptConfig.PropertyChanged += OnScriptConfigPropertyChanged;
+        Config.WebRemoteConfig.PropertyChanged += OnWebRemoteConfigPropertyChanged;
+        Config.AiConfig.PropertyChanged += OnAiConfigPropertyChanged;
         InitializeCountries();
         InitializeMiyousheCookie();
         // 初始化OCR模型选择
         SelectedPaddleOcrModelConfig = Config.OtherConfig.OcrConfig.PaddleOcrModelConfig;
+        _ = EnsureNonLoopbackRiskConsentAsync();
     }
 
     public AllConfig Config { get; set; }
@@ -81,6 +90,174 @@ public partial class CommonSettingsPageViewModel : ViewModel
     public ObservableCollection<string> Areas { get; } = new();
 
     public ObservableCollection<string> MapPathingTypes { get; } = ["SIFT", "TemplateMatch"];
+
+    private async Task EnsureNonLoopbackRiskConsentAsync()
+    {
+        if (_isMcpRiskPromptBusy ||
+            !Config.McpConfig.AllowNonLoopbackConnections ||
+            Config.McpConfig.NonLoopbackRiskAccepted ||
+            IsLoopbackAddress(Config.McpConfig.ListenAddress))
+        {
+            return;
+        }
+
+        _isMcpRiskPromptBusy = true;
+        try
+        {
+            var result = await ThemedMessageBox.ShowAsync(
+                "你正在允许 MCP 监听非本地地址（如 0.0.0.0/局域网地址）。\n\n这会允许网络中可达主机直接调用本地 MCP 工具，可能导致配置篡改、脚本导入或任务控制等风险。\n\n是否确认承担该风险并继续？",
+                "安全警告",
+                MessageBoxButton.YesNo,
+                ThemedMessageBox.MessageBoxIcon.Warning);
+            if (result == MessageBoxResult.Yes)
+            {
+                Config.McpConfig.NonLoopbackRiskAccepted = true;
+            }
+            else
+            {
+                Config.McpConfig.AllowNonLoopbackConnections = false;
+            }
+        }
+        finally
+        {
+            _isMcpRiskPromptBusy = false;
+        }
+    }
+
+    private void OnMcpConfigPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(McpConfig.WebSearchEnabled))
+        {
+            _configService.Save();
+            return;
+        }
+
+        if (e.PropertyName == nameof(McpConfig.Enabled) && Config.McpConfig.Enabled)
+        {
+            ThemedMessageBox.Warning("你已开启“启用 MCP 外部调用”。\n这会开放 MCP 端口给外部客户端，请仅在可信网络环境下启用。");
+            return;
+        }
+
+        if (e.PropertyName == nameof(McpConfig.AllowNonLoopbackConnections) && Config.McpConfig.AllowNonLoopbackConnections)
+        {
+            _ = EnsureNonLoopbackRiskConsentAsync();
+            return;
+        }
+
+        if (e.PropertyName == nameof(McpConfig.ListenAddress))
+        {
+            _ = EnsureNonLoopbackRiskConsentAsync();
+            return;
+        }
+
+        if (e.PropertyName == nameof(McpConfig.AllowConfigSet) && Config.McpConfig.AllowConfigSet)
+        {
+            ThemedMessageBox.Warning("你已开启“允许 MCP 修改配置”。\n该能力可能修改关键配置项，请仅在可信调用端与可信网络环境下启用。");
+            return;
+        }
+
+        if (e.PropertyName == nameof(McpConfig.AllowStartGameAction) && Config.McpConfig.AllowStartGameAction)
+        {
+            ThemedMessageBox.Warning("你已开启“允许 MCP 启动游戏动作”。\n远程调用可触发本机启动行为，请确认调用端可信。");
+        }
+    }
+
+    private static bool IsLoopbackAddress(string? address)
+    {
+        if (string.IsNullOrWhiteSpace(address))
+        {
+            return true;
+        }
+
+        if (!System.Net.IPAddress.TryParse(address, out var ip))
+        {
+            return true;
+        }
+
+        if (System.Net.IPAddress.IsLoopback(ip))
+        {
+            return true;
+        }
+
+        if (ip.IsIPv4MappedToIPv6)
+        {
+            return System.Net.IPAddress.IsLoopback(ip.MapToIPv4());
+        }
+
+        return false;
+    }
+
+    private void OnScriptConfigPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ScriptConfig.EnableCommandLineStart) && Config.ScriptConfig.EnableCommandLineStart)
+        {
+            ThemedMessageBox.Warning("你已开启“允许命令行参数启动任务”。\n外部进程可通过启动参数触发自动执行，存在高风险，请仅在可信环境启用。");
+            return;
+        }
+
+        if (e.PropertyName == nameof(ScriptConfig.AllowMcpImportNow) && Config.ScriptConfig.AllowMcpImportNow)
+        {
+            ThemedMessageBox.Warning("你已开启“允许 MCP 立即导入脚本”。\n这会允许远程调用触发本地脚本目录写入，请仅在可信环境启用。");
+            return;
+        }
+
+        if (e.PropertyName == nameof(ScriptConfig.EnableShellTask) && Config.ScriptConfig.EnableShellTask)
+        {
+            ThemedMessageBox.Warning("你已开启“全局 Shell 任务”。\n脚本可执行 cmd 命令，存在高风险，请谨慎使用。");
+        }
+    }
+
+    private void OnWebRemoteConfigPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(WebRemoteConfig.Enabled) or nameof(WebRemoteConfig.Username) or nameof(WebRemoteConfig.Password))
+        {
+            if (Config.WebRemoteConfig.Enabled && !IsWebRemoteAuthConfigured())
+            {
+                ThemedMessageBox.Warning(
+                    "Web 远程控制已改为强制鉴权。\n请先设置鉴权账号和密码后，再启用 Web 远程控制。");
+                Config.WebRemoteConfig.Enabled = false;
+                return;
+            }
+
+            if (e.PropertyName == nameof(WebRemoteConfig.Enabled) && Config.WebRemoteConfig.Enabled)
+            {
+                ThemedMessageBox.Warning(
+                    "你已开启“启用 Web 外部调用”。\n这会开放 Web 远程端口，请确保仅在可信网络启用并妥善保管鉴权账号密码。");
+                return;
+            }
+        }
+
+        if (e.PropertyName == nameof(WebRemoteConfig.AllowAdvancedConfigApi) &&
+            Config.WebRemoteConfig.AllowAdvancedConfigApi)
+        {
+            ThemedMessageBox.Warning(
+                "你已开启“Web 高级配置接口”。\n这会开放 /api/config/get 与 /api/config/set，可能被用于远程读取/修改配置。\n请仅在可信网络与可信调用端启用。");
+            return;
+        }
+
+        if (e.PropertyName == nameof(WebRemoteConfig.ClusterApiEnabled) &&
+            Config.WebRemoteConfig.ClusterApiEnabled)
+        {
+            ThemedMessageBox.Warning(
+                "你已开启“集群群控 API”。\n请务必配置强随机 Token 与白名单 IP，避免被未授权主机调用。");
+        }
+    }
+
+    private bool IsWebRemoteAuthConfigured()
+    {
+        return !string.IsNullOrWhiteSpace(Config.WebRemoteConfig.Username) &&
+               !string.IsNullOrWhiteSpace(Config.WebRemoteConfig.Password);
+    }
+
+    private void OnAiConfigPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(AiConfig.AutoExecuteMcpToolCalls) &&
+            Config.AiConfig.AutoExecuteMcpToolCalls)
+        {
+            ThemedMessageBox.Warning(
+                "你已开启“自动执行 MCP 调用”。\nAI 可直接触发本地控制操作（配置修改、任务控制、脚本订阅等），请仅在可信输入场景启用。");
+        }
+    }
 
     [ObservableProperty] private FrozenDictionary<string, string> _languageDict =
         new string[] { "zh-Hans", "zh-Hant", "en"}
@@ -462,7 +639,6 @@ public partial class CommonSettingsPageViewModel : ViewModel
                         "AutoGeniusInvokation",
                         "AutoPathing",
                         "ScriptGroup",
-                        "OneDragon",
                         "Images"
                     };
 

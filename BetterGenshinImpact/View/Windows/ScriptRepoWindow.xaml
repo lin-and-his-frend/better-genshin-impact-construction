@@ -66,6 +66,7 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
                             <!--  第一行：更新渠道  -->
@@ -173,8 +174,25 @@
                                              PasswordChanged="PasswordBox_PasswordChanged" />
                             </Grid>
 
-                            <!--  第五行：按钮组  -->
-                            <Grid Grid.Row="4" Margin="0,0,0,8">
+                            <!--  第五行：系统代理开关  -->
+                            <Grid Grid.Row="4" Margin="0,0,0,12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+
+                                <ui:TextBlock Grid.Column="0"
+                                              Margin="0,0,8,0"
+                                              VerticalAlignment="Center"
+                                              Foreground="{ui:ThemeResource TextFillColorPrimaryBrush}"
+                                              Text="系统代理：" />
+                                <ui:ToggleSwitch Grid.Column="1"
+                                                 HorizontalAlignment="Left"
+                                                 IsChecked="{Binding Config.UseSystemProxyForRepoUpdate, Mode=TwoWay}" />
+                            </Grid>
+
+                            <!--  第六行：按钮组  -->
+                            <Grid Grid.Row="5" Margin="0,0,0,8">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition />
                                     <ColumnDefinition />

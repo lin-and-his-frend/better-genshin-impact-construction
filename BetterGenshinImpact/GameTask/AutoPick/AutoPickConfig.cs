@@ -1,5 +1,8 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+﻿using BetterGenshinImpact.Helpers;
+using BetterGenshinImpact.Helpers.Win32;
+using CommunityToolkit.Mvvm.ComponentModel;
 using System;
+using System.Diagnostics;
 
 namespace BetterGenshinImpact.GameTask.AutoPick
 {
@@ -57,5 +60,18 @@ namespace BetterGenshinImpact.GameTask.AutoPick
         // 白名单启用状态
         [ObservableProperty]
         private bool _whiteListEnabled= false;
+
+        partial void OnEnabledChanging(bool value)
+        {
+            var oldValue = _enabled;
+            if (oldValue == value)
+            {
+                return;
+            }
+
+            var stack = new StackTrace(2, true).ToString();
+            ConsoleHelper.WriteLine($"[TRACE] AutoPickConfig.Enabled {oldValue} -> {value}\n{stack}");
+        }
     }
 }
+

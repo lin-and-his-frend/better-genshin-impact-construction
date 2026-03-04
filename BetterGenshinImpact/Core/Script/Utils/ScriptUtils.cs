@@ -15,6 +15,12 @@ public class ScriptUtils
         if (string.IsNullOrWhiteSpace(path))
             throw new ArgumentException("文件路径不能为空");
 
+        if (string.IsNullOrWhiteSpace(root))
+            throw new ArgumentException("根目录不能为空");
+
+        if (Path.IsPathRooted(path))
+            throw new ArgumentException($"文件路径 '{path}' 不能是绝对路径");
+
         // 检查是否含有非法文件名字符
         var invalidChars = Path.GetInvalidFileNameChars();
         string fileName = Path.GetFileName(path);
@@ -26,15 +32,30 @@ public class ScriptUtils
         // 替换分隔符
         path = path.Replace('\\', '/');
 
-        // 组合并获取绝对路径
-        var fullPath = Path.GetFullPath(Path.Combine(root, path));
+        var fullRoot = Path.GetFullPath(root);
+        var fullPath = Path.GetFullPath(Path.Combine(fullRoot, path));
 
         // 防止越界访问
-        if (!fullPath.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+        if (!IsSubPathOf(fullRoot, fullPath))
         {
             throw new ArgumentException($"文件路径 '{path}' 越界访问!");
         }
 
         return fullPath;
+    }
+
+    private static bool IsSubPathOf(string rootPath, string targetPath)
+    {
+        var normalizedRoot = Path.GetFullPath(rootPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var normalizedTarget = Path.GetFullPath(targetPath)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (string.Equals(normalizedRoot, normalizedTarget, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var rootWithSeparator = normalizedRoot + Path.DirectorySeparatorChar;
+        return normalizedTarget.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase);
     }
 }

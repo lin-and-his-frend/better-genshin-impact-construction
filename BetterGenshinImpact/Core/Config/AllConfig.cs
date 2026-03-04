@@ -115,6 +115,11 @@ public partial class AllConfig : ObservableObject
     public McpConfig McpConfig { get; set; } = new();
 
     /// <summary>
+    ///     AI 问答配置
+    /// </summary>
+    public AiConfig AiConfig { get; set; } = new();
+
+    /// <summary>
     ///     原神启动配置
     /// </summary>
     public GenshinStartConfig GenshinStartConfig { get; set; } = new();
@@ -273,6 +278,7 @@ public partial class AllConfig : ObservableObject
         CommonConfig.PropertyChanged += OnAnyPropertyChanged;
         WebRemoteConfig.PropertyChanged += OnAnyPropertyChanged;
         McpConfig.PropertyChanged += OnAnyPropertyChanged;
+        AiConfig.PropertyChanged += OnAnyPropertyChanged;
         GenshinStartConfig.PropertyChanged += OnAnyPropertyChanged;
         NotificationConfig.PropertyChanged += OnAnyPropertyChanged;
         NotificationConfig.PropertyChanged += OnNotificationPropertyChanged;
@@ -282,6 +288,7 @@ public partial class AllConfig : ObservableObject
         AutoFishingConfig.PropertyChanged += OnAnyPropertyChanged;
         QuickTeleportConfig.PropertyChanged += OnAnyPropertyChanged;
         AutoCookConfig.PropertyChanged += OnAnyPropertyChanged;
+        AutoGeniusInvokationConfig.PropertyChanged += OnAnyPropertyChanged;
         MacroConfig.PropertyChanged += OnAnyPropertyChanged;
         HotKeyConfig.PropertyChanged += OnAnyPropertyChanged;
         AutoWoodConfig.PropertyChanged += OnAnyPropertyChanged;
@@ -294,12 +301,15 @@ public partial class AllConfig : ObservableObject
         AutoLeyLineOutcropConfig.PropertyChanged += OnAnyPropertyChanged;
         MapMaskConfig.PropertyChanged += OnAnyPropertyChanged;
         AutoMusicGameConfig.PropertyChanged += OnAnyPropertyChanged;
+        GetGridIconsConfig.PropertyChanged += OnAnyPropertyChanged;
         TpConfig.PropertyChanged += OnAnyPropertyChanged;
+        RecordConfig.PropertyChanged += OnAnyPropertyChanged;
         ScriptConfig.PropertyChanged += OnAnyPropertyChanged;
         PathingConditionConfig.PropertyChanged += OnAnyPropertyChanged;
         DevConfig.PropertyChanged += OnAnyPropertyChanged;
         HardwareAccelerationConfig.PropertyChanged += OnAnyPropertyChanged;
         SkillCdConfig.PropertyChanged += OnAnyPropertyChanged;
+        OtherConfig.PropertyChanged += OnAnyPropertyChanged;
     }
 
     public void OnAnyPropertyChanged(object? sender, EventArgs args)

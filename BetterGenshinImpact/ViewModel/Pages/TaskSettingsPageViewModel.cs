@@ -159,11 +159,19 @@ public partial class TaskSettingsPageViewModel : ViewModel
                 .GetCustomAttribute<DescriptionAttribute>()?
                 .Description ?? e.ToString());
 
-    private bool saveScreenshotOnKeyTick;
     public bool SaveScreenshotOnKeyTick
     {
-        get => Config.CommonConfig.ScreenshotEnabled && saveScreenshotOnKeyTick;
-        set => SetProperty(ref saveScreenshotOnKeyTick, value);
+        get => Config.CommonConfig.ScreenshotEnabled && Config.AutoFishingConfig.SaveScreenshotOnKeyTick;
+        set
+        {
+            if (Config.AutoFishingConfig.SaveScreenshotOnKeyTick == value)
+            {
+                return;
+            }
+
+            Config.AutoFishingConfig.SaveScreenshotOnKeyTick = value;
+            OnPropertyChanged();
+        }
     }
 
     [ObservableProperty]
@@ -207,6 +215,8 @@ public partial class TaskSettingsPageViewModel : ViewModel
         Config = configService.Get();
         _navigationService = navigationService;
         _taskDispatcher = taskTriggerDispatcher;
+        Config.CommonConfig.PropertyChanged += OnCommonConfigPropertyChanged;
+        Config.AutoFishingConfig.PropertyChanged += OnAutoFishingConfigPropertyChanged;
         NormalizeLeyLineOutcropType();
 
         //_strategyList = LoadCustomScript(Global.Absolute(@"User\AutoGeniusInvokation"));
@@ -216,6 +226,22 @@ public partial class TaskSettingsPageViewModel : ViewModel
         _domainNameList = ["", .. MapLazyAssets.Instance.DomainNameList];
         _autoFightViewModel = new AutoFightViewModel(Config);
         _oneDragonFlowViewModel = new OneDragonFlowViewModel();
+    }
+
+    private void OnCommonConfigPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(CommonConfig.ScreenshotEnabled))
+        {
+            OnPropertyChanged(nameof(SaveScreenshotOnKeyTick));
+        }
+    }
+
+    private void OnAutoFishingConfigPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(AutoFishingConfig.SaveScreenshotOnKeyTick))
+        {
+            OnPropertyChanged(nameof(SaveScreenshotOnKeyTick));
+        }
     }
 
     private void NormalizeLeyLineOutcropType()

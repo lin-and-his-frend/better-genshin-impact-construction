@@ -82,7 +82,6 @@ public class Global
             "AutoGeniusInvokation",
             "AutoPathing",
             "ScriptGroup",
-            "OneDragon",
             "Images"
         };
 

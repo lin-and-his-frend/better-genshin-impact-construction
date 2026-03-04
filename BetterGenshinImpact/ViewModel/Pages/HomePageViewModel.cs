@@ -133,6 +133,11 @@ public partial class HomePageViewModel : ViewModel
 
         _autoRun = false;
 
+        if (!TaskContext.Instance().Config.ScriptConfig.EnableCommandLineStart)
+        {
+            return;
+        }
+
         var args = Environment.GetCommandLineArgs();
         if (args.Length > 1 && args[1].Contains("start"))
         {

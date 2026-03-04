@@ -1481,7 +1481,7 @@
                                 MinWidth="180"
                                 MaxWidth="800"
                                 Margin="0,0,36,0"
-                                Text="{Binding Config.NotificationConfig.TelegramApiBaseUrl, Mode=TwoWay}"
+                                Text="{Binding Config.NotificationConfig.TelegramApiBaseUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Delay=400}"
                                 TextWrapping="NoWrap" />
                 </Grid>
 

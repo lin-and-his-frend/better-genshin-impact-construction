@@ -56,4 +56,16 @@ public partial class ScriptConfig : ObservableObject
 
     // 命令行启动时是否先自动更新已订阅脚本再执行命令
     [ObservableProperty] private bool _autoUpdateBeforeCommandLineRun = false;
+
+    // 允许通过命令行参数触发自动任务（高风险）
+    [ObservableProperty] private bool _enableCommandLineStart = false;
+
+    // 更新脚本仓库时是否使用系统代理
+    [ObservableProperty] private bool _useSystemProxyForRepoUpdate = true;
+
+    // 全局启用 Shell 任务（高风险）
+    [ObservableProperty] private bool _enableShellTask = false;
+
+    // 允许 MCP 订阅脚本时立即导入到本地（高风险）
+    [ObservableProperty] private bool _allowMcpImportNow = false;
 }

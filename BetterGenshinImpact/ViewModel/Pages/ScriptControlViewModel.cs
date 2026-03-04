@@ -1681,11 +1681,11 @@ public partial class ScriptControlViewModel : ViewModel
     }
 
     [RelayCommand]
-    public async void OnDeleteScriptByFolder(ScriptGroupProject? item)
+    public Task OnDeleteScriptByFolder(ScriptGroupProject? item)
     {
         if (item == null)
         {
-            return;
+            return Task.CompletedTask;
         }
 
         if (SelectedScriptGroup != null)
@@ -1707,6 +1707,8 @@ public partial class ScriptControlViewModel : ViewModel
                 TimeSpan.FromSeconds(2)
             );
         }
+
+        return Task.CompletedTask;
     }
 
     [RelayCommand]

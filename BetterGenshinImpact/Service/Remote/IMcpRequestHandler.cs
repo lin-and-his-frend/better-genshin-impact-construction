@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 
 namespace BetterGenshinImpact.Service.Remote;
 
-internal interface IMcpRequestHandler
+public interface IMcpRequestHandler
 {
     Task HandleConnectionAsync(Stream stream, CancellationToken cancellationToken);
 }

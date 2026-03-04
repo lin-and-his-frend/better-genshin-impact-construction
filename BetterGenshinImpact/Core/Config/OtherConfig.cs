@@ -2,6 +2,7 @@ using System;
 using BetterGenshinImpact.Core.Recognition;
 using BetterGenshinImpact.Model;
 using CommunityToolkit.Mvvm.ComponentModel;
+using System.ComponentModel;
 
 namespace BetterGenshinImpact.Core.Config;
 
@@ -9,6 +10,17 @@ namespace BetterGenshinImpact.Core.Config;
 [Serializable]
 public partial class OtherConfig : ObservableObject
 {
+    private AutoRestart? _wiredAutoRestartConfig;
+    private FarmingPlan? _wiredFarmingPlanConfig;
+    private MiyousheDataSupport? _wiredMiyousheDataConfig;
+    private Miyoushe? _wiredMiyousheConfig;
+    private Ocr? _wiredOcrConfig;
+
+    public OtherConfig()
+    {
+        WireNestedConfigs();
+    }
+
     //调度器任务和部分独立任务，失去焦点，自动激活游戏窗口
     [ObservableProperty]
     private bool _restoreFocusOnLostEnabled = false;
@@ -161,4 +173,83 @@ public partial class OtherConfig : ObservableObject
     /// </summary>
     [ObservableProperty]
     private string _uiCultureInfoName = "zh-Hans";
+
+    partial void OnAutoRestartConfigChanged(AutoRestart value)
+    {
+        WireNestedConfigs();
+    }
+
+    partial void OnFarmingPlanConfigChanged(FarmingPlan value)
+    {
+        WireNestedConfigs();
+    }
+
+    partial void OnMiyousheConfigChanged(Miyoushe value)
+    {
+        WireNestedConfigs();
+    }
+
+    partial void OnOcrConfigChanged(Ocr value)
+    {
+        WireNestedConfigs();
+    }
+
+    private void WireNestedConfigs()
+    {
+        Rewire(ref _wiredAutoRestartConfig, AutoRestartConfig, OnAutoRestartConfigPropertyChanged);
+        Rewire(ref _wiredFarmingPlanConfig, FarmingPlanConfig, OnFarmingPlanConfigPropertyChanged);
+        Rewire(ref _wiredMiyousheConfig, MiyousheConfig, OnMiyousheConfigPropertyChanged);
+        Rewire(ref _wiredOcrConfig, OcrConfig, OnOcrConfigPropertyChanged);
+        Rewire(ref _wiredMiyousheDataConfig, FarmingPlanConfig?.MiyousheDataConfig, OnMiyousheDataConfigPropertyChanged);
+    }
+
+    private static void Rewire<T>(ref T? wired, T? current, PropertyChangedEventHandler handler)
+        where T : class, INotifyPropertyChanged
+    {
+        if (ReferenceEquals(wired, current))
+        {
+            return;
+        }
+
+        if (wired != null)
+        {
+            wired.PropertyChanged -= handler;
+        }
+
+        wired = current;
+        if (wired != null)
+        {
+            wired.PropertyChanged += handler;
+        }
+    }
+
+    private void OnAutoRestartConfigPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(AutoRestartConfig));
+    }
+
+    private void OnFarmingPlanConfigPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(FarmingPlan.MiyousheDataConfig))
+        {
+            WireNestedConfigs();
+        }
+
+        OnPropertyChanged(nameof(FarmingPlanConfig));
+    }
+
+    private void OnMiyousheDataConfigPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(FarmingPlanConfig));
+    }
+
+    private void OnMiyousheConfigPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(MiyousheConfig));
+    }
+
+    private void OnOcrConfigPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(OcrConfig));
+    }
 }

@@ -12,6 +12,7 @@ public class ConfigService : IConfigService
 {
     private readonly object _locker = new(); // 只有UI线程会调用这个方法，lock好像意义不大，而且浪费了下面的读写锁hhh
     private readonly ReaderWriterLockSlim _rwLock = new();
+    private bool _suppressSave;
 
     public static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -51,6 +52,11 @@ public class ConfigService : IConfigService
 
     public void Save()
     {
+        if (_suppressSave)
+        {
+            return;
+        }
+
         if (Config != null)
         {
             Write(Config);
@@ -62,8 +68,7 @@ public class ConfigService : IConfigService
         _rwLock.EnterReadLock();
         try
         {
-            var json = Global.ReadAllTextIfExist(@"User\config.json");
-            if (string.IsNullOrWhiteSpace(json))
+            if (!UserStorage.TryReadMainConfig(out var json) || string.IsNullOrWhiteSpace(json))
             {
                 return new AllConfig();
             }
@@ -95,7 +100,7 @@ public class ConfigService : IConfigService
         try
         {
             var json = JsonSerializer.Serialize(config, JsonOptions);
-            Global.WriteAllText(@"User\config.json", json);
+            UserStorage.TryWriteMainConfig(json);
         }
         catch (Exception e)
         {
@@ -106,6 +111,170 @@ public class ConfigService : IConfigService
         {
             _rwLock.ExitWriteLock();
         }
+    }
+
+    public bool ReloadFromStorage()
+    {
+        lock (_locker)
+        {
+            if (!UserStorage.TryReadMainConfig(out var json) || string.IsNullOrWhiteSpace(json))
+            {
+                return false;
+            }
+
+            AllConfig? incoming;
+            try
+            {
+                incoming = JsonSerializer.Deserialize<AllConfig>(json, JsonOptions);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+                Console.WriteLine(ex.StackTrace);
+                return false;
+            }
+
+            if (incoming == null)
+            {
+                return false;
+            }
+
+            if (Config == null)
+            {
+                Config = incoming;
+                Config.OnAnyChangedAction = Save;
+                Config.InitEvent();
+                return true;
+            }
+
+            _suppressSave = true;
+            try
+            {
+                ApplyConfig(Config, incoming);
+            }
+            finally
+            {
+                _suppressSave = false;
+            }
+
+            return true;
+        }
+    }
+
+    private static void ApplyConfig(object target, object source)
+    {
+        if (target == null || source == null)
+        {
+            return;
+        }
+
+        var type = target.GetType();
+        foreach (var prop in type.GetProperties(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public))
+        {
+            if (!prop.CanRead || !prop.CanWrite)
+            {
+                continue;
+            }
+
+            if (prop.GetIndexParameters().Length > 0)
+            {
+                continue;
+            }
+
+            var srcValue = prop.GetValue(source);
+            var dstValue = prop.GetValue(target);
+            var propType = prop.PropertyType;
+
+            if (IsSimpleType(propType))
+            {
+                prop.SetValue(target, srcValue);
+                continue;
+            }
+
+            if (typeof(System.Collections.IDictionary).IsAssignableFrom(propType))
+            {
+                if (srcValue is System.Collections.IDictionary srcDict)
+                {
+                    if (dstValue is System.Collections.IDictionary dstDict && !dstDict.IsReadOnly)
+                    {
+                        dstDict.Clear();
+                        foreach (var key in srcDict.Keys)
+                        {
+                            dstDict[key] = srcDict[key];
+                        }
+                    }
+                    else
+                    {
+                        prop.SetValue(target, srcValue);
+                    }
+                }
+                else
+                {
+                    prop.SetValue(target, srcValue);
+                }
+
+                continue;
+            }
+
+            if (typeof(System.Collections.IList).IsAssignableFrom(propType))
+            {
+                if (srcValue is System.Collections.IList srcList)
+                {
+                    if (dstValue is System.Collections.IList dstList && !dstList.IsReadOnly && !dstList.IsFixedSize)
+                    {
+                        dstList.Clear();
+                        foreach (var item in srcList)
+                        {
+                            dstList.Add(item);
+                        }
+                    }
+                    else
+                    {
+                        prop.SetValue(target, srcValue);
+                    }
+                }
+                else
+                {
+                    prop.SetValue(target, srcValue);
+                }
+
+                continue;
+            }
+
+            if (propType.IsClass)
+            {
+                if (srcValue == null)
+                {
+                    prop.SetValue(target, null);
+                    continue;
+                }
+
+                if (dstValue == null)
+                {
+                    prop.SetValue(target, srcValue);
+                    continue;
+                }
+
+                ApplyConfig(dstValue, srcValue);
+            }
+        }
+    }
+
+    private static bool IsSimpleType(Type type)
+    {
+        if (type.IsPrimitive || type.IsEnum)
+        {
+            return true;
+        }
+
+        if (type == typeof(string) || type == typeof(decimal) || type == typeof(DateTime) || type == typeof(DateTimeOffset) ||
+            type == typeof(TimeSpan) || type == typeof(Guid))
+        {
+            return true;
+        }
+
+        var underlying = Nullable.GetUnderlyingType(type);
+        return underlying != null && IsSimpleType(underlying);
     }
 }
 

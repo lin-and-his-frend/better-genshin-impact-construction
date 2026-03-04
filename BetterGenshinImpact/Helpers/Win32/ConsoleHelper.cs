@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -57,14 +58,16 @@ public static class ConsoleHelper
         }
 
         // 如果无法附加到父进程，则分配新的控制台
-        // if (AllocConsole())
-        // {
-        //     _consoleAllocated = true;
-        //     SetConsoleTitle(title);
-        //     InitializeConsoleStreams();
-        //     Console.WriteLine("=== BetterGI 控制台输出 ===");
-        //     return true;
-        // }
+#if DEBUG
+        if (AllocConsole())
+        {
+            _consoleAllocated = true;
+            SetConsoleTitle(title);
+            InitializeConsoleStreams();
+            Console.WriteLine("=== BetterGI 控制台输出 ===");
+            return true;
+        }
+#endif
 
         return false;
     }
@@ -120,7 +123,12 @@ public static class ConsoleHelper
         if (_consoleAllocated)
         {
             Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] {message}");
+            return;
         }
+
+#if DEBUG
+        Debug.WriteLine($"[{DateTime.Now:HH:mm:ss}] {message}");
+#endif
     }
 
     /// <summary>
@@ -132,6 +140,11 @@ public static class ConsoleHelper
         if (_consoleAllocated)
         {
             Console.Error.WriteLine($"[{DateTime.Now:HH:mm:ss}] ERROR: {message}");
+            return;
         }
+
+#if DEBUG
+        Debug.WriteLine($"[{DateTime.Now:HH:mm:ss}] ERROR: {message}");
+#endif
     }
 }

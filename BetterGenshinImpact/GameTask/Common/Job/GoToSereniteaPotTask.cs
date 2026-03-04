@@ -11,15 +11,11 @@ using BetterGenshinImpact.GameTask.QuickTeleport.Assets;
 using BetterGenshinImpact.Helpers;
 using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 using OpenCvSharp;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
-using System.IO;
-using Newtonsoft.Json;
-using BetterGenshinImpact.GameTask.QuickSereniteaPot;
 using BetterGenshinImpact.Core.Recognition.OCR;
 using System.Linq;
 using System.Threading;
@@ -45,7 +41,6 @@ internal class GoToSereniteaPotTask
     
     private  OneDragonFlowConfig? SelectedConfig;
     private ObservableCollection<OneDragonFlowConfig> ConfigList = [];
-    private static readonly string OneDragonFlowConfigFolder = Global.Absolute(@"User\OneDragon");
     
 
     public GoToSereniteaPotTask()
@@ -670,40 +665,20 @@ internal class GoToSereniteaPotTask
     
     private void InitConfigList()
     {
-        Directory.CreateDirectory(OneDragonFlowConfigFolder);
-        // 读取文件夹内所有json配置，按创建时间正序
-        var configFiles = Directory.GetFiles(OneDragonFlowConfigFolder, "*.json");
-        var configs = new List<OneDragonFlowConfig>();
-
+        var configs = OneDragonConfigStore.LoadAll().ToList();
         OneDragonFlowConfig? selected = null;
-        foreach (var configFile in configFiles)
+        foreach (var config in configs)
         {
-            var json = File.ReadAllText(configFile);
-            var config = JsonConvert.DeserializeObject<OneDragonFlowConfig>(json);
-            if (config != null)
+            if (config.Name == TaskContext.Instance().Config.SelectedOneDragonFlowConfigName)
             {
-                configs.Add(config);
-                if (config.Name == TaskContext.Instance().Config.SelectedOneDragonFlowConfigName)
-                {
-                    selected = config;
-                }
+                selected = config;
+                break;
             }
         }
 
-        if (selected == null)
+        if (selected == null && configs.Count > 0)
         {
-            if (configs.Count > 0)
-            {
-                selected = configs[0];
-            }
-            else
-            {
-                selected = new OneDragonFlowConfig
-                {
-                    Name = "默认配置"
-                };
-                configs.Add(selected);
-            }
+            selected = configs[0];
         }
 
         ConfigList.Clear();

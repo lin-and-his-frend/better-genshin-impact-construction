@@ -68,8 +68,7 @@ public sealed class RepoWebBridge
 
     public async Task<string> GetUserConfigJson()
     {
-        var configJson = Global.ReadAllTextIfExist(@"User\config.json");
-        if (string.IsNullOrEmpty(configJson))
+        if (!UserStorage.TryReadMainConfig(out var configJson) || string.IsNullOrEmpty(configJson))
         {
             await ThemedMessageBox.ErrorAsync("用户配置文件不存在或读取失败。", "获取用户配置失败");
             return string.Empty;
@@ -106,30 +105,30 @@ public sealed class RepoWebBridge
         {
             // URL 解码路径（处理中文文件名）
             relPath = WebUtility.UrlDecode(relPath);
-        
-            string filePath = Path.Combine(ScriptRepoUpdater.CenterRepoPath, "repo", relPath)
-                .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
-            
-            // 验证解析后的路径在允许的目录范围内
-            string normalizedBasePath = Path.GetFullPath(Path.Combine(ScriptRepoUpdater.CenterRepoPath, "repo"));
-            string normalizedFilePath = Path.GetFullPath(filePath);
-            if (!normalizedFilePath.StartsWith(normalizedBasePath, StringComparison.OrdinalIgnoreCase))
+
+            var repoRoot = Path.GetFullPath(Path.Combine(ScriptRepoUpdater.CenterRepoPath, "repo"));
+            var filePath = Path.GetFullPath(Path.Combine(repoRoot, relPath ?? string.Empty));
+            if (!IsSubPathOf(repoRoot, filePath))
             {
                 return Task.FromResult("404");
             }
+
+            var safeRelativePath = Path
+                .GetRelativePath(repoRoot, filePath)
+                .Replace(Path.DirectorySeparatorChar, '/');
 
             string extension = Path.GetExtension(filePath).ToLower();
     
             if (AllowedTextExtensions.Contains(extension)) 
             {
                 // 读取文本文件
-                string? content = ScriptRepoUpdater.Instance.ReadFileFromCenterRepo(relPath);
+                string? content = ScriptRepoUpdater.Instance.ReadFileFromCenterRepo(safeRelativePath);
                 return Task.FromResult(string.IsNullOrEmpty(content) ? "404" : content);
             }
             else if (AllowedImageExtensions.Contains(extension))
             {
                 // 读取图片文件，返回 Base64 编码
-                byte[]? bytes = ScriptRepoUpdater.Instance.ReadBinaryFileFromCenterRepo(relPath);
+                byte[]? bytes = ScriptRepoUpdater.Instance.ReadBinaryFileFromCenterRepo(safeRelativePath);
                 if (bytes == null || bytes.Length == 0)
                 {
                     return Task.FromResult("404");
@@ -246,6 +245,19 @@ public sealed class RepoWebBridge
             Console.WriteLine(e);
             return false;
         }
+    }
+
+    private static bool IsSubPathOf(string rootPath, string candidatePath)
+    {
+        var normalizedRoot = Path.GetFullPath(rootPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var normalizedCandidate = Path.GetFullPath(candidatePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (string.Equals(normalizedRoot, normalizedCandidate, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var rootWithSeparator = normalizedRoot + Path.DirectorySeparatorChar;
+        return normalizedCandidate.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string GetRepoJsonPath()

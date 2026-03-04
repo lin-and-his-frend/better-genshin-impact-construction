@@ -17,7 +17,7 @@ namespace BetterGenshinImpact.GameTask.LogParse
 {
     public class LogParse
     {
-        private static readonly string _configPath = Global.Absolute(@"User\LogParse\config.json");
+        private static readonly string _configPath = @"User\LogParse\config.json";
         private static readonly string _assets_dir = Global.Absolute($@"GameTask\LogParse\Assets");
         // 添加一个静态事件用于通知日志的生成状态
         public static event Action<string> HtmlGenerationStatusChanged = delegate { };
@@ -895,25 +895,18 @@ namespace BetterGenshinImpact.GameTask.LogParse
                 WriteIndented = true // 启用格式化（缩进）
             };
             var content = JsonSerializer.Serialize(config, options);
-            string directoryPath = Path.GetDirectoryName(_configPath);
-
-            if (!Directory.Exists(directoryPath))
-            {
-                // 如果文件夹不存在，创建文件夹
-                Directory.CreateDirectory(directoryPath);
-            }
-
-            File.WriteAllText(_configPath, content);
+            Global.WriteAllText(_configPath, content);
         }
 
         public static LogParseConfig LoadConfig()
         {
             LogParseConfig? config = null;
-            if (File.Exists(_configPath))
+            var content = Global.ReadAllTextIfExist(_configPath);
+            if (!string.IsNullOrEmpty(content))
             {
                 try
                 {
-                    config = JsonSerializer.Deserialize<LogParseConfig>(File.ReadAllText(_configPath)) ??
+                    config = JsonSerializer.Deserialize<LogParseConfig>(content) ??
                              throw new NullReferenceException();
                 }
                 catch (NullReferenceException)

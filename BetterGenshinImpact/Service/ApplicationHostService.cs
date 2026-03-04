@@ -18,7 +18,7 @@ namespace BetterGenshinImpact.Service;
 /// <summary>
 /// Managed host of the application.
 /// </summary>
-public class ApplicationHostService(IServiceProvider serviceProvider) : IHostedService
+public class ApplicationHostService(IServiceProvider serviceProvider, ILogger<ApplicationHostService> logger) : IHostedService
 {
     private INavigationWindow? _navigationWindow;
 
@@ -51,6 +51,15 @@ public class ApplicationHostService(IServiceProvider serviceProvider) : IHostedS
             _navigationWindow!.ShowWindow();
             //
             var args = Environment.GetCommandLineArgs();
+            var scriptConfig = TaskContext.Instance().Config.ScriptConfig;
+
+            if (args.Length > 1 && !scriptConfig.EnableCommandLineStart)
+            {
+                logger.LogWarning("命令行参数启动已被安全设置拦截。参数: {Arg}", args[1]);
+                _ = _navigationWindow.Navigate(typeof(HomePage));
+                await Task.CompletedTask;
+                return;
+            }
 
             if (args.Length > 1)
             {
@@ -60,7 +69,6 @@ public class ApplicationHostService(IServiceProvider serviceProvider) : IHostedS
 
                 // 命令行启动时，先等待自动更新订阅脚本完成，再运行配置组/一条龙
                 // （正常双击启动在 MainWindowViewModel.OnLoaded 中以 fire-and-forget 方式调用）
-                var scriptConfig = TaskContext.Instance().Config.ScriptConfig;
                 if (scriptConfig.AutoUpdateBeforeCommandLineRun)
                 {
                     await Task.Run(() => ScriptRepoUpdater.Instance.AutoUpdateSubscribedScripts());

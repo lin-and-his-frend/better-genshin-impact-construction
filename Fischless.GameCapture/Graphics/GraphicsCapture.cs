@@ -114,10 +114,15 @@ public class GraphicsCapture(bool captureHdr = false) : IGameCapture
             _captureSession.IsCursorCaptureEnabled = false;
         }
 
-        if (ApiInformation.IsWriteablePropertyPresent("Windows.Graphics.Capture.GraphicsCaptureSession",
-                nameof(GraphicsCaptureSession.IsBorderRequired)))
+        if (ApiInformation.IsWriteablePropertyPresent(
+                "Windows.Graphics.Capture.GraphicsCaptureSession",
+                "IsBorderRequired"))
         {
-            _captureSession.IsBorderRequired = false;
+            var borderProp = _captureSession.GetType().GetProperty("IsBorderRequired");
+            if (borderProp?.CanWrite == true)
+            {
+                borderProp.SetValue(_captureSession, false);
+            }
         }
 
         _frameTimer.Start();

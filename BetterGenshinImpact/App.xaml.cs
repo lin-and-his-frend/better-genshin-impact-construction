@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -238,8 +239,8 @@ public partial class App : Application
 
         try
         {
-            // 分配控制台窗口以支持控制台输出
-            ConsoleHelper.AllocateConsole("BetterGI Console");
+            // 按配置控制控制台窗口（默认关闭）
+            ApplyConsoleWindowSetting();
             EnsureConfigMigrationChoice();
             RegisterEvents();
             await _host.StartAsync();
@@ -291,6 +292,27 @@ public partial class App : Application
 
         //非UI线程未捕获异常处理事件(例如自己创建的一个子线程)
         AppDomain.CurrentDomain.UnhandledException += CurrentDomainUnhandledException;
+
+        TaskContext.Instance().Config.DevConfig.PropertyChanged += DevConfigOnPropertyChanged;
+    }
+
+    private static void DevConfigOnPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(DevConfig.ConsoleWindowEnabled) || string.IsNullOrEmpty(e.PropertyName))
+        {
+            ApplyConsoleWindowSetting();
+        }
+    }
+
+    private static void ApplyConsoleWindowSetting()
+    {
+        if (TaskContext.Instance().Config.DevConfig.ConsoleWindowEnabled)
+        {
+            ConsoleHelper.AllocateConsole("BetterGI Console");
+            return;
+        }
+
+        ConsoleHelper.FreeConsoleWindow();
     }
 
     private static void TaskSchedulerUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)

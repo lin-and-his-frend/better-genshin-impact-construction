@@ -1350,6 +1350,36 @@
             </StackPanel>
         </ui:CardExpander>
 
+        <ui:CardControl Margin="0,0,0,12" Icon="{ui:SymbolIcon DeveloperBoard24}">
+            <ui:CardControl.Header>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBlock Grid.Row="0"
+                                  Grid.Column="0"
+                                  FontTypography="Body"
+                                  Text="控制台窗口（开发者）"
+                                  TextWrapping="Wrap" />
+                    <ui:TextBlock Grid.Row="1"
+                                  Grid.Column="0"
+                                  Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                  Text="用于开发调试日志，默认关闭；切换后立即生效"
+                                  TextWrapping="Wrap" />
+                    <ui:ToggleSwitch Grid.Row="0"
+                                     Grid.RowSpan="2"
+                                     Grid.Column="1"
+                                     Margin="0,0,36,0"
+                                     IsChecked="{Binding Config.DevConfig.ConsoleWindowEnabled, Mode=TwoWay}" />
+                </Grid>
+            </ui:CardControl.Header>
+        </ui:CardControl>
+
         <!--  自动更新已订阅脚本  -->
         <ui:CardExpander Margin="0,0,0,12"
                          ContentPadding="0"

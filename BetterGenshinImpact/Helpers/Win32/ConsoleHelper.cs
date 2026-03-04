@@ -58,7 +58,6 @@ public static class ConsoleHelper
         }
 
         // 如果无法附加到父进程，则分配新的控制台
-#if DEBUG
         if (AllocConsole())
         {
             _consoleAllocated = true;
@@ -67,7 +66,6 @@ public static class ConsoleHelper
             Console.WriteLine("=== BetterGI 控制台输出 ===");
             return true;
         }
-#endif
 
         return false;
     }

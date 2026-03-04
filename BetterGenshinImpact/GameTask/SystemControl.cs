@@ -67,28 +67,29 @@ public class SystemControl
 
     private static void StartFromLocalWithCmd(string path, string workdir, string args)
     {
+        var psi = BuildLocalStartProcessStartInfo(path, workdir, args);
+        Process.Start(psi);
+    }
+
+    private static ProcessStartInfo BuildLocalStartProcessStartInfo(string path, string workdir, string args)
+    {
+        // 安全修复：
+        // 旧实现通过 `cmd.exe /c start` 启动，`workdir/path` 中的 CMD 元字符（如 `&`）会被解释，
+        // 从而触发命令注入。改为直接启动目标进程，彻底绕过 CMD 解析链路。
         var psi = new ProcessStartInfo
         {
-            FileName = "cmd.exe",
+            FileName = path,
+            WorkingDirectory = workdir,
             UseShellExecute = false,
             CreateNoWindow = true
         };
-
-        // /d: 禁用 AutoRun，避免执行用户/系统注入的 cmd 启动脚本
-        psi.ArgumentList.Add("/d");
-        psi.ArgumentList.Add("/c");
-        psi.ArgumentList.Add("start");
-        psi.ArgumentList.Add("");
-        psi.ArgumentList.Add("/d");
-        psi.ArgumentList.Add(workdir);
-        psi.ArgumentList.Add(path);
 
         foreach (var token in SplitArgs(args))
         {
             psi.ArgumentList.Add(token);
         }
 
-        Process.Start(psi);
+        return psi;
     }
 
     private static void StartFromLocalDirect(string path, string workdir, string args)

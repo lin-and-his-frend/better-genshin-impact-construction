@@ -35,6 +35,7 @@ using BetterGenshinImpact.GameTask.UseRedeemCode;
 using BetterGenshinImpact.Service.Interface;
 using BetterGenshinImpact.Service.Notification;
 using BetterGenshinImpact.Service.Notifier;
+using BetterGenshinImpact.ViewModel.Pages;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using OpenCvSharp;
@@ -1676,14 +1677,29 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
 
         if (payload.KeyMouseNames != null)
         {
+            var keyMouseRoot = Path.GetFullPath(Global.Absolute(@"User\KeyMouseScript"));
             foreach (var name in payload.KeyMouseNames.Where(n => !string.IsNullOrWhiteSpace(n)))
             {
-                group.AddProject(ScriptGroupProject.BuildKeyMouseProject(name));
+                if (!TryNormalizeRelativePathUnderRoot(keyMouseRoot, name, out var normalizedRelative))
+                {
+                    _logger.LogDebug("忽略非法键鼠脚本路径: {Name}", name);
+                    continue;
+                }
+
+                var fullPath = Path.GetFullPath(Path.Combine(keyMouseRoot, normalizedRelative.Replace('/', Path.DirectorySeparatorChar)));
+                if (!File.Exists(fullPath))
+                {
+                    _logger.LogDebug("忽略不存在的键鼠脚本: {Path}", fullPath);
+                    continue;
+                }
+
+                group.AddProject(ScriptGroupProject.BuildKeyMouseProject(normalizedRelative));
             }
         }
 
         if (payload.Pathing != null)
         {
+            var pathingRoot = Path.GetFullPath(MapPathingViewModel.PathJsonPath);
             foreach (var item in payload.Pathing)
             {
                 if (item == null || string.IsNullOrWhiteSpace(item.Name))
@@ -1691,7 +1707,30 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
                     continue;
                 }
 
-                group.AddProject(ScriptGroupProject.BuildPathingProject(item.Name, item.Folder ?? string.Empty));
+                var rawRelative = string.IsNullOrWhiteSpace(item.Folder)
+                    ? item.Name
+                    : $"{item.Folder}/{item.Name}";
+                if (!TryNormalizeRelativePathUnderRoot(pathingRoot, rawRelative, out var normalizedRelative))
+                {
+                    _logger.LogDebug("忽略非法路径追踪脚本路径: {Path}", rawRelative);
+                    continue;
+                }
+
+                var fullPath = Path.GetFullPath(Path.Combine(pathingRoot, normalizedRelative.Replace('/', Path.DirectorySeparatorChar)));
+                if (!File.Exists(fullPath))
+                {
+                    _logger.LogDebug("忽略不存在的路径追踪脚本: {Path}", fullPath);
+                    continue;
+                }
+
+                var fileName = Path.GetFileName(normalizedRelative);
+                var folder = Path.GetDirectoryName(normalizedRelative)?.Replace('\\', '/') ?? string.Empty;
+                if (folder == ".")
+                {
+                    folder = string.Empty;
+                }
+
+                group.AddProject(ScriptGroupProject.BuildPathingProject(fileName, folder));
             }
         }
 
@@ -8074,9 +8113,26 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             return;
         }
 
+        var root = Path.GetFullPath(Global.ScriptPath());
+        var candidate = Path.GetFullPath(Path.Combine(root, folder));
+        if (!IsSubPathOf(root, candidate))
+        {
+            response.StatusCode = (int)HttpStatusCode.BadRequest;
+            await WriteJsonAsync(response, new { error = "Invalid folder" }, ct);
+            return;
+        }
+
+        var normalizedFolder = Path.GetRelativePath(root, candidate);
+        if (string.IsNullOrWhiteSpace(normalizedFolder) || string.Equals(normalizedFolder, ".", StringComparison.Ordinal))
+        {
+            response.StatusCode = (int)HttpStatusCode.BadRequest;
+            await WriteJsonAsync(response, new { error = "Invalid folder" }, ct);
+            return;
+        }
+
         try
         {
-            var project = new BetterGenshinImpact.Core.Script.Project.ScriptProject(folder);
+            var project = new BetterGenshinImpact.Core.Script.Project.ScriptProject(normalizedFolder);
             await _scriptService.RunMulti([new ScriptGroupProject(project)]);
             await WriteJsonAsync(response, new { ok = true }, ct);
         }
@@ -8239,6 +8295,41 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             .TrimStart('/', '\\')
             .Replace('\\', '/');
         return !string.IsNullOrWhiteSpace(relativePath);
+    }
+
+    private static bool TryNormalizeRelativePathUnderRoot(string root, string rawRelativePath, out string normalizedRelativePath)
+    {
+        normalizedRelativePath = string.Empty;
+        if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(rawRelativePath))
+        {
+            return false;
+        }
+
+        var fullRoot = Path.GetFullPath(root);
+        var relativeInput = rawRelativePath.Trim()
+            .TrimStart('/', '\\')
+            .Replace('/', Path.DirectorySeparatorChar)
+            .Replace('\\', Path.DirectorySeparatorChar);
+
+        if (string.IsNullOrWhiteSpace(relativeInput))
+        {
+            return false;
+        }
+
+        var candidate = Path.GetFullPath(Path.Combine(fullRoot, relativeInput));
+        if (!IsSubPathOf(fullRoot, candidate))
+        {
+            return false;
+        }
+
+        var relative = Path.GetRelativePath(fullRoot, candidate).Replace('\\', '/');
+        if (string.IsNullOrWhiteSpace(relative) || string.Equals(relative, ".", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        normalizedRelativePath = relative;
+        return true;
     }
 
     private async Task HandleKeyMousePlayAsync(HttpListenerRequest request, HttpListenerResponse response, CancellationToken ct)

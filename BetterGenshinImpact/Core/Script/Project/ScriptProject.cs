@@ -25,8 +25,20 @@ public class ScriptProject
 
     public ScriptProject(string folderName)
     {
-        FolderName = folderName;
-        ProjectPath = Path.Combine(Global.ScriptPath(), folderName);
+        if (string.IsNullOrWhiteSpace(folderName))
+        {
+            throw new ArgumentException("脚本文件夹名称不能为空", nameof(folderName));
+        }
+
+        var scriptRoot = Path.GetFullPath(Global.ScriptPath());
+        var candidatePath = Path.GetFullPath(Path.Combine(scriptRoot, folderName));
+        if (!IsSubPathOf(scriptRoot, candidatePath))
+        {
+            throw new ArgumentException($"脚本文件夹路径越界: {folderName}", nameof(folderName));
+        }
+
+        FolderName = Path.GetRelativePath(scriptRoot, candidatePath);
+        ProjectPath = candidatePath;
         if (!Directory.Exists(ProjectPath))
         {
             throw new DirectoryNotFoundException("脚本文件夹不存在:" + ProjectPath);
@@ -39,6 +51,19 @@ public class ScriptProject
 
         Manifest = Manifest.FromJson(File.ReadAllText(ManifestFile));
         Manifest.Validate(ProjectPath);
+    }
+
+    private static bool IsSubPathOf(string rootPath, string targetPath)
+    {
+        var normalizedRoot = Path.GetFullPath(rootPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var normalizedTarget = Path.GetFullPath(targetPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (string.Equals(normalizedRoot, normalizedTarget, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var rootWithSeparator = normalizedRoot + Path.DirectorySeparatorChar;
+        return normalizedTarget.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase);
     }
 
     public ScrollViewer? LoadSettingUi(dynamic context)

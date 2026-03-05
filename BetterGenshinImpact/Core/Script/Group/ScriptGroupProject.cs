@@ -224,14 +224,32 @@ public partial class ScriptGroupProject : ObservableObject
         }
         else if (Type == "KeyMouse")
         {
-            // 加载并执行
-            var json = await File.ReadAllTextAsync(Global.Absolute(@$"User\KeyMouseScript\{Name}"));
+            var keyMouseRoot = Global.Absolute(@"User\KeyMouseScript");
+            if (!TryResolvePathUnderRoot(keyMouseRoot, [Name], out var macroPath))
+            {
+                TaskControl.Logger.LogWarning("键鼠脚本路径非法，已阻止执行: {Name}", Name);
+                return;
+            }
+
+            if (!File.Exists(macroPath))
+            {
+                TaskControl.Logger.LogWarning("键鼠脚本不存在，已跳过: {Path}", macroPath);
+                return;
+            }
+
+            var json = await File.ReadAllTextAsync(macroPath);
             await KeyMouseMacroPlayer.PlayMacro(json, CancellationContext.Instance.Cts.Token, false);
         }
         else if (Type == "Pathing")
         {
+            if (!TryResolvePathUnderRoot(MapPathingViewModel.PathJsonPath, [FolderName, Name], out var pathingFile))
+            {
+                TaskControl.Logger.LogWarning("路径追踪脚本路径非法，已阻止执行: {Folder}/{Name}", FolderName, Name);
+                return;
+            }
+
             // 加载并执行
-            var task = PathingTask.BuildFromFilePath(Path.Combine(MapPathingViewModel.PathJsonPath, FolderName, Name));
+            var task = PathingTask.BuildFromFilePath(pathingFile);
             if (task == null)
             {
                 return;
@@ -323,6 +341,54 @@ public partial class ScriptGroupProject : ObservableObject
                 : DateTimeOffset.Now;
         executionRecord.EndTime = DateTime.Now;
         ExecutionRecordStorage.SaveExecutionRecord(executionRecord);
+    }
+
+    private static bool TryResolvePathUnderRoot(string root, IReadOnlyList<string?> segments, out string resolvedPath)
+    {
+        resolvedPath = string.Empty;
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            return false;
+        }
+
+        var normalizedRoot = Path.GetFullPath(root)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        var current = normalizedRoot;
+        foreach (var raw in segments)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                continue;
+            }
+
+            var segment = raw.Replace('/', Path.DirectorySeparatorChar)
+                .Replace('\\', Path.DirectorySeparatorChar)
+                .TrimStart(Path.DirectorySeparatorChar);
+            current = Path.Combine(current, segment);
+        }
+
+        var candidate = Path.GetFullPath(current);
+        if (!IsSubPathOf(normalizedRoot, candidate))
+        {
+            return false;
+        }
+
+        resolvedPath = candidate;
+        return true;
+    }
+
+    private static bool IsSubPathOf(string rootPath, string candidatePath)
+    {
+        var normalizedRoot = Path.GetFullPath(rootPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var normalizedCandidate = Path.GetFullPath(candidatePath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (string.Equals(normalizedRoot, normalizedCandidate, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var rootWithSeparator = normalizedRoot + Path.DirectorySeparatorChar;
+        return normalizedCandidate.StartsWith(rootWithSeparator, StringComparison.OrdinalIgnoreCase);
     }
 
     partial void OnTypeChanged(string value)

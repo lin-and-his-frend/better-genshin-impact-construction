@@ -58,8 +58,7 @@ public partial class App : Application
         .UseElevated()
         .UseSingleInstance("BetterGI")
         .ConfigureLogging(builder => { builder.ClearProviders(); })
-        .ConfigureServices(
-            (context, services) =>
+        .ConfigureServices((context, services) =>
             {
                 RunEarlyStartupPreparation();
 
@@ -82,7 +81,7 @@ public partial class App : Application
                         rollingInterval: RollingInterval.Day,
                         retainedFileCountLimit: 31,
                         retainedFileTimeLimit: TimeSpan.FromDays(21))
-                    .WriteTo.Console(outputTemplate: 
+                    .WriteTo.Console(outputTemplate:
                         "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
                     .WriteTo.Sink(new LogRelaySink(LogEventLevel.Information))
                     .MinimumLevel.Debug()
@@ -97,7 +96,7 @@ public partial class App : Application
                 Log.Logger = loggerConfiguration.CreateLogger();
                 services.AddSingleton<IMissingTranslationReporter, SupabaseMissingTranslationReporter>();
                 services.AddSingleton<ITranslationService, JsonTranslationService>();
-                
+
                 services.AddLogging(c => c.AddSerilog());
                 // if ("zh-Hans".Equals(all.OtherConfig.UiCultureInfoName, StringComparison.OrdinalIgnoreCase))
                 // {
@@ -189,13 +188,13 @@ public partial class App : Application
                 services.AddSingleton<IMihoyoMapApiService, MihoyoMapApiService>();
                 services.AddSingleton<IKongyingTavernApiService, KongyingTavernApiService>();
                 services.AddSingleton<IMaskMapPointService, MaskMapPointService>();
-                
+
                 services.AddSingleton(TimeProvider.System);
                 services.AddSingleton<IServerTimeProvider, ServerTimeProvider>();
 
                 // Configuration
                 //services.Configure<AppConfig>(context.Configuration.GetSection(nameof(AppConfig)));
-                
+
                 I18N.Culture = new CultureInfo("zh-Hans"); // #1846
             }
         )
@@ -249,9 +248,18 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            // DEBUG only, no overhead
             Debug.WriteLine(ex);
             ConsoleHelper.WriteError($"应用程序启动失败: {ex.Message}");
+
+            try
+            {
+                HandleException(ex);
+            }
+            catch (Exception ex2)
+            {
+                Debug.WriteLine(ex2);
+                ConsoleHelper.WriteError($"应用程序启动失败打印日志时又失败了: {ex2.Message}");
+            }
 
             if (Debugger.IsAttached)
             {
@@ -274,7 +282,7 @@ public partial class App : Application
 
         await _host.StopAsync();
         _host.Dispose();
-        
+
         // 释放控制台窗口
         ConsoleHelper.FreeConsoleWindow();
     }

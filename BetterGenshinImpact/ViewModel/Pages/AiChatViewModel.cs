@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -45,6 +46,8 @@ public partial class AiChatViewModel : ViewModel
         "当用户要查找脚本或名称不明确时，优先调用 bgi.script.search 并提供 query 关键词，避免返回大量脚本。\n" +
         "如果 bgi.script.search 返回 remote.matches（含 subscribeUri），说明本地无匹配脚本，应优先调用 bgi.script.subscribe 完成导入；再把 subscribeUri 回传给用户。\n" +
         "当用户表达采集材料、跑图、刷怪、打怪、讨伐等需求时，优先调用 bgi.script.search，且 arguments.type 必须设为 pathing。\n" +
+        "用户提到自动地脉花配置、地脉花参数、是否开启领奖后扫描掉落时，优先使用 bgi.leyline.get / bgi.leyline.set。\n" +
+        "用户提到测试通知、通知通道、Webhook/Telegram/邮箱/Bark/Discord 等通知连通性时，优先使用 bgi.notification.channels / bgi.notification.test。\n" +
         "调用 bgi.script.run 时，必须直接复制 bgi.script.search 返回的 name 原文，不要翻译、音译或改写文件名。\n" +
         "不要在没有 query 的情况下调用 bgi.script.list。\n" +
         "用户提到“一条龙”相关操作时使用 bgi.one_dragon.list / bgi.one_dragon.run。\n" +
@@ -281,6 +284,72 @@ public partial class AiChatViewModel : ViewModel
     {
         await RefreshMcpToolsAsync();
         await base.OnNavigatedToAsync();
+    }
+
+    public Task RefreshMcpToolsForBridgeAsync(CancellationToken cancellationToken = default)
+    {
+        return RunOnUiThreadAsync(RefreshMcpToolsAsync, cancellationToken);
+    }
+
+    public void ResetConversationForBridge(IReadOnlyList<AiChatMessage>? history)
+    {
+        RunOnUiThread(() => ResetConversationForBridgeCore(history));
+    }
+
+    private void ResetConversationForBridgeCore(IReadOnlyList<AiChatMessage>? history)
+    {
+        Messages.Clear();
+        InputText = string.Empty;
+        StatusText = "就绪";
+        McpStatus = "内置 MCP 未连接";
+        IsBusy = false;
+        McpBusy = false;
+        McpArguments = "{}";
+
+        _recentScriptCandidates = [];
+        _recentScriptCandidatesUpdatedUtc = DateTimeOffset.MinValue;
+        _lastFeatureFocus = null;
+        InvalidateCompressedContextCache();
+
+        if (history == null || history.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var item in history)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(item.Content))
+            {
+                continue;
+            }
+
+            Messages.Add(new AiChatMessage(item.Role, item.Content.Trim()));
+        }
+    }
+
+    public Task SendBridgeMessageAsync(string message, CancellationToken cancellationToken = default)
+    {
+        return RunOnUiThreadAsync(() =>
+        {
+            InputText = message ?? string.Empty;
+            return SendMessageAsync();
+        }, cancellationToken);
+    }
+
+    public (string StatusText, IReadOnlyList<AiChatMessage> Messages) GetBridgeSnapshot()
+    {
+        return RunOnUiThread(() =>
+        {
+            var snapshot = Messages
+                .Select(x => new AiChatMessage(x.Role, x.Content ?? string.Empty))
+                .ToList();
+            return (StatusText ?? string.Empty, (IReadOnlyList<AiChatMessage>)snapshot);
+        });
+    }
+
+    public int GetBridgeMcpToolCount()
+    {
+        return RunOnUiThread(() => McpTools.Count);
     }
 
     private bool CanSendMessage()
@@ -4745,6 +4814,45 @@ public partial class AiChatViewModel : ViewModel
         _cachedCompressedMcpSummaryBySignature.Clear();
     }
 
+    private static void RunOnUiThread(Action action)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null || dispatcher.CheckAccess())
+        {
+            action();
+            return;
+        }
+
+        dispatcher.Invoke(action);
+    }
+
+    private static T RunOnUiThread<T>(Func<T> func)
+    {
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null || dispatcher.CheckAccess())
+        {
+            return func();
+        }
+
+        return dispatcher.Invoke(func);
+    }
+
+    private static Task RunOnUiThreadAsync(Func<Task> action, CancellationToken cancellationToken = default)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromCanceled(cancellationToken);
+        }
+
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher == null || dispatcher.CheckAccess())
+        {
+            return action();
+        }
+
+        return dispatcher.InvokeAsync(action).Task.Unwrap();
+    }
+
     private void SetStatusTextSafe(string text)
     {
         UIDispatcherHelper.Invoke(() => StatusText = text);
@@ -5616,24 +5724,7 @@ public partial class AiChatViewModel : ViewModel
 
     private static int ComputeMcpCompressionSignature(string content, int mcpLimit)
     {
-        var hash = new HashCode();
-        hash.Add(mcpLimit);
-        hash.Add(content.Length);
-        if (content.Length > 0)
-        {
-            hash.Add(content[0]);
-            hash.Add(content[^1]);
-        }
-
-        if (content.Length <= 2048)
-        {
-            hash.Add(content);
-            return hash.ToHashCode();
-        }
-
-        hash.Add(content.Substring(0, 1024));
-        hash.Add(content.Substring(content.Length - 1024));
-        return hash.ToHashCode();
+        return ComputeStableTextSignature("mcp", mcpLimit, content);
     }
 
     private async Task<string?> TryCompressContextAsync(
@@ -5766,17 +5857,27 @@ public partial class AiChatViewModel : ViewModel
 
     private int ComputeCompressionSignature(int maxContextChars, string historyForCompression)
     {
-        var hash = new HashCode();
-        hash.Add(maxContextChars);
-        hash.Add(historyForCompression.Length);
+        return ComputeStableTextSignature("context", maxContextChars, historyForCompression);
+    }
 
-        if (historyForCompression.Length > 0)
+    private static int ComputeStableTextSignature(string scope, int limit, string content)
+    {
+        using var sha256 = SHA256.Create();
+        var scopeBytes = Encoding.UTF8.GetBytes(scope);
+        var limitBytes = BitConverter.GetBytes(limit);
+        var contentBytes = Encoding.UTF8.GetBytes(content ?? string.Empty);
+
+        sha256.TransformBlock(scopeBytes, 0, scopeBytes.Length, null, 0);
+        sha256.TransformBlock(limitBytes, 0, limitBytes.Length, null, 0);
+        sha256.TransformFinalBlock(contentBytes, 0, contentBytes.Length);
+
+        var hash = sha256.Hash;
+        if (hash == null || hash.Length < sizeof(int))
         {
-            hash.Add(historyForCompression[0]);
-            hash.Add(historyForCompression[^1]);
+            return HashCode.Combine(scope, limit, content?.Length ?? 0);
         }
 
-        return hash.ToHashCode();
+        return BitConverter.ToInt32(hash, 0);
     }
 
     private static int NormalizeMaxContextChars(int value)

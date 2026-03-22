@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>BetterGI 调度与一条龙中控</title>
+  <style>
+    :root {
+      --bg: #f8f9fb;
+      --bg-2: #eef1f5;
+      --card: #ffffff;
+      --line: #d4dae3;
+      --text: #1a1d23;
+      --muted: #6b7280;
+      --primary: #0f7f9f;
+      --primary-strong: #056180;
+      --accent: #e78f2f;
+      --shadow: 0 12px 32px rgba(15, 30, 50, 0.12);
+      --shadow-sm: 0 4px 12px rgba(15, 30, 50, 0.06);
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Noto Sans SC", "Segoe UI", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(60rem 38rem at -10% -12%, rgba(15, 127, 159, 0.15), transparent 60%),
+        radial-gradient(64rem 38rem at 110% -14%, rgba(231, 143, 47, 0.12), transparent 62%),
+        linear-gradient(180deg, #fafbfc 0%, var(--bg) 100%);
+      min-height: 100vh;
+    }
+
+    .wrap {
+      max-width: 1880px;
+      margin: 0 auto;
+      padding: 14px;
+      display: grid;
+      gap: 12px;
+      min-height: 100vh;
+    }
+
+    .topbar {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      box-shadow: var(--shadow);
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-height: 48px;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+    }
+
+    .brand {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .brand span {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .segmented {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #f4f8fb;
+      padding: 3px;
+      display: inline-flex;
+      gap: 4px;
+      flex-wrap: nowrap;
+    }
+
+    .segmented button {
+      border: 1px solid transparent;
+      border-radius: 999px;
+      background: transparent;
+      color: var(--muted);
+      padding: 7px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all .2s ease;
+    }
+
+    .segmented button.active {
+      background: #fff;
+      border-color: rgba(15, 127, 159, 0.3);
+      color: var(--primary-strong);
+      font-weight: 600;
+      box-shadow: 0 3px 10px rgba(15, 127, 159, 0.15), 0 1px 3px rgba(15, 127, 159, 0.1);
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: nowrap;
+    }
+
+    .btn {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--text);
+      padding: 8px 13px;
+      font-size: 13px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all .2s ease;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .btn.primary {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-strong) 100%);
+      border-color: var(--primary);
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(15, 127, 159, 0.25);
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      border-color: rgba(15, 127, 159, 0.4);
+      box-shadow: 0 6px 16px rgba(15, 127, 159, 0.2);
+    }
+
+    .btn.primary:hover {
+      box-shadow: 0 6px 18px rgba(15, 127, 159, 0.35);
+    }
+
+    .frame-host {
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      padding: 12px;
+      display: grid;
+      gap: 12px;
+      min-height: calc(100vh - 120px);
+    }
+
+    .single-frame,
+    .dual-frame {
+      min-height: 0;
+      display: none;
+      gap: 10px;
+    }
+
+    .single-frame.active {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+
+    .dual-frame.active {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .pane {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: #fafbfc;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .pane-head {
+      border-bottom: 1px solid var(--line);
+      padding: 8px 10px;
+      font-size: 13px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      background: #fff;
+    }
+
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      display: inline-block;
+      margin-right: 7px;
+      box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2); }
+      50% { box-shadow: 0 0 0 5px rgba(16, 185, 129, 0.3); }
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #fff;
+      min-height: 640px;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      padding: 0 4px;
+    }
+
+    @media (max-width: 1279px) {
+      .dual-frame.active {
+        grid-template-columns: 1fr;
+      }
+
+      .brand span {
+        display: none;
+      }
+    }
+
+    @media (max-width: 767px) {
+      .wrap {
+        padding: 8px;
+      }
+
+      .topbar,
+      .frame-host {
+        border-radius: 14px;
+      }
+
+      iframe {
+        min-height: 70vh;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header class="topbar">
+      <div class="brand">
+        <h1>调度器 / 一条龙中控台</h1>
+        <span>独立页面 · 跳转式管理 · 支持双栏对照</span>
+      </div>
+      <nav class="segmented" aria-label="View Switch">
+        <button id="viewScheduler" class="active" type="button">调度器</button>
+        <button id="viewOneDragon" type="button">一条龙</button>
+        <button id="viewDual" type="button">双栏对照</button>
+      </nav>
+      <div class="actions">
+        <button id="refreshFrames" class="btn" type="button">刷新内页</button>
+        <a class="btn primary" href="/web/">返回主控制台</a>
+      </div>
+    </header>
+
+    <section class="frame-host">
+      <div id="singleFrame" class="single-frame active">
+        <article class="pane">
+          <div class="pane-head">
+            <span><i class="dot"></i><span id="singleTitle">调度器页面</span></span>
+            <a id="singleOpenNewTab" class="btn" target="_blank" rel="noreferrer noopener">新标签打开</a>
+          </div>
+          <iframe id="singleIframe" title="Single Panel"></iframe>
+        </article>
+      </div>
+
+      <div id="dualFrame" class="dual-frame">
+        <article class="pane">
+          <div class="pane-head">
+            <span><i class="dot"></i>调度器</span>
+            <a id="schedulerOpenNewTab" class="btn" target="_blank" rel="noreferrer noopener">新标签打开</a>
+          </div>
+          <iframe id="schedulerIframe" title="Scheduler"></iframe>
+        </article>
+        <article class="pane">
+          <div class="pane-head">
+            <span><i class="dot"></i>一条龙</span>
+            <a id="dragonOpenNewTab" class="btn" target="_blank" rel="noreferrer noopener">新标签打开</a>
+          </div>
+          <iframe id="dragonIframe" title="One Dragon"></iframe>
+        </article>
+      </div>
+
+      <div class="hint">快捷键：`1` 调度器，`2` 一条龙，`3` 双栏，`R` 刷新当前视图</div>
+    </section>
+  </div>
+
+  <script>
+    "use strict";
+
+    const routes = Object.freeze({
+      scheduler: "/web/scheduler.html",
+      oneDragon: "/web/one-dragon.html"
+    });
+
+    const ui = {
+      viewScheduler: document.getElementById("viewScheduler"),
+      viewOneDragon: document.getElementById("viewOneDragon"),
+      viewDual: document.getElementById("viewDual"),
+      refreshFrames: document.getElementById("refreshFrames"),
+      singleFrame: document.getElementById("singleFrame"),
+      dualFrame: document.getElementById("dualFrame"),
+      singleIframe: document.getElementById("singleIframe"),
+      schedulerIframe: document.getElementById("schedulerIframe"),
+      dragonIframe: document.getElementById("dragonIframe"),
+      singleTitle: document.getElementById("singleTitle"),
+      singleOpenNewTab: document.getElementById("singleOpenNewTab"),
+      schedulerOpenNewTab: document.getElementById("schedulerOpenNewTab"),
+      dragonOpenNewTab: document.getElementById("dragonOpenNewTab")
+    };
+
+    let mode = "scheduler";
+
+    function setButtonState() {
+      ui.viewScheduler.classList.toggle("active", mode === "scheduler");
+      ui.viewOneDragon.classList.toggle("active", mode === "dragon");
+      ui.viewDual.classList.toggle("active", mode === "dual");
+    }
+
+    function setFrameMode(nextMode) {
+      mode = nextMode;
+      setButtonState();
+      const isDual = mode === "dual";
+      ui.singleFrame.classList.toggle("active", !isDual);
+      ui.dualFrame.classList.toggle("active", isDual);
+
+      if (mode === "scheduler") {
+        ui.singleTitle.textContent = "调度器页面";
+        ui.singleIframe.src = routes.scheduler;
+        ui.singleOpenNewTab.href = routes.scheduler;
+      } else if (mode === "dragon") {
+        ui.singleTitle.textContent = "一条龙页面";
+        ui.singleIframe.src = routes.oneDragon;
+        ui.singleOpenNewTab.href = routes.oneDragon;
+      } else {
+        ui.schedulerIframe.src = routes.scheduler;
+        ui.dragonIframe.src = routes.oneDragon;
+      }
+      history.replaceState({}, "", `#view=${encodeURIComponent(mode)}`);
+    }
+
+    function refreshActiveFrames() {
+      if (mode === "dual") {
+        ui.schedulerIframe.src = routes.scheduler;
+        ui.dragonIframe.src = routes.oneDragon;
+        return;
+      }
+      ui.singleIframe.src = mode === "scheduler" ? routes.scheduler : routes.oneDragon;
+    }
+
+    ui.schedulerOpenNewTab.href = routes.scheduler;
+    ui.dragonOpenNewTab.href = routes.oneDragon;
+
+    ui.viewScheduler.addEventListener("click", () => setFrameMode("scheduler"));
+    ui.viewOneDragon.addEventListener("click", () => setFrameMode("dragon"));
+    ui.viewDual.addEventListener("click", () => setFrameMode("dual"));
+    ui.refreshFrames.addEventListener("click", refreshActiveFrames);
+
+    window.addEventListener("keydown", (event) => {
+      const key = String(event.key || "").toLowerCase();
+      if (key === "1") setFrameMode("scheduler");
+      if (key === "2") setFrameMode("dragon");
+      if (key === "3") setFrameMode("dual");
+      if (key === "r") refreshActiveFrames();
+    });
+
+    const hash = String(location.hash || "");
+    const view = new URLSearchParams(hash.replace(/^#/, "")).get("view");
+    if (view === "dual" || view === "dragon" || view === "scheduler") {
+      setFrameMode(view);
+    } else {
+      setFrameMode("scheduler");
+    }
+  </script>
+</body>
+</html>

@@ -20,10 +20,13 @@ using BetterGenshinImpact.Core.Script.Project;
 using BetterGenshinImpact.Core.Script.Utils;
 using BetterGenshinImpact.Core.Config;
 using BetterGenshinImpact.GameTask;
+using BetterGenshinImpact.GameTask.AutoLeyLineOutcrop;
 using BetterGenshinImpact.GameTask.Common;
 using BetterGenshinImpact.Helpers.Http;
 using BetterGenshinImpact.Helpers.Win32;
 using BetterGenshinImpact.Service.Interface;
+using BetterGenshinImpact.Service.Notification;
+using BetterGenshinImpact.Service.Notifier;
 using BetterGenshinImpact.ViewModel.Pages;
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
@@ -121,6 +124,22 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
         "McpConfig.WebSearchMaxResults",
         "McpConfig.WebSearchLanguage"
     ];
+    private static readonly string[] NotificationTestChannels =
+    [
+        "webhook",
+        "websocket",
+        "windows_uwp",
+        "feishu",
+        "onebot",
+        "workweixin",
+        "email",
+        "bark",
+        "telegram",
+        "xxtui",
+        "dingding",
+        "discord",
+        "serverchan"
+    ];
 
     public McpRequestHandler(
         IConfigService configService,
@@ -139,7 +158,7 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
     {
         var isInternalCall = stream is NamedPipeServerStream;
         var reader = new McpMessageReader(stream);
-        var writer = new McpMessageWriter(stream);
+        IMcpResponseWriter writer = new McpMessageWriter(stream);
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -163,71 +182,83 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
                 return;
             }
 
-            try
-            {
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-                if (!root.TryGetProperty("method", out var methodElement))
-                {
-                    ConsoleHelper.WriteLine($"[MCP {InstanceTag}] invalid request (missing method), len={json.Length}");
-                    await writer.WriteErrorAsync(ExtractId(root), -32600, "Invalid Request", cancellationToken);
-                    continue;
-                }
-
-                var method = methodElement.GetString() ?? string.Empty;
-                var id = ExtractId(root);
-                if (string.Equals(method, "tools/call", StringComparison.OrdinalIgnoreCase) &&
-                    root.TryGetProperty("params", out var paramElement) &&
-                    paramElement.TryGetProperty("name", out var nameElement))
-                {
-                    var toolName = nameElement.GetString() ?? string.Empty;
-                    ConsoleHelper.WriteLine($"[MCP {InstanceTag}] call {toolName} (id={id ?? "null"})");
-                }
-                else
-                {
-                    ConsoleHelper.WriteLine($"[MCP {InstanceTag}] {method} (id={id ?? "null"})");
-                }
-
-                switch (method)
-                {
-                    case "initialize":
-                        await writer.WriteResultAsync(id, BuildInitializeResult(), cancellationToken);
-                        break;
-                    case "ping":
-                        await writer.WriteResultAsync(id, new { }, cancellationToken);
-                        break;
-                    case "tools/list":
-                        await writer.WriteResultAsync(id, new { tools = BuildToolsList() }, cancellationToken);
-                        break;
-                    case "tools/call":
-                        await HandleToolCallAsync(root, id, writer, cancellationToken, isInternalCall);
-                        break;
-                    case "notifications/initialized":
-                        break;
-                    default:
-                        if (id == null)
-                        {
-                            break;
-                        }
-
-                        await writer.WriteErrorAsync(id, -32601, $"Method not found: {method}", cancellationToken);
-                        break;
-                }
-            }
-            catch (JsonException)
-            {
-                ConsoleHelper.WriteLine($"[MCP {InstanceTag}] parse error, len={json.Length}");
-                await writer.WriteErrorAsync(null, -32700, "Parse error", cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "MCP 处理请求失败");
-                await writer.WriteErrorAsync(null, -32603, "Internal error", cancellationToken);
-            }
+            await ProcessRequestAsync(json, writer, cancellationToken, isInternalCall);
         }
     }
 
-    private async Task HandleToolCallAsync(JsonElement root, object? id, McpMessageWriter writer, CancellationToken ct, bool isInternalCall)
+    public async Task<string?> HandleRequestAsync(string payloadJson, bool isInternalCall, CancellationToken cancellationToken)
+    {
+        var writer = new BufferedMcpResponseWriter();
+        await ProcessRequestAsync(payloadJson, writer, cancellationToken, isInternalCall);
+        return writer.ResponseJson;
+    }
+
+    private async Task ProcessRequestAsync(string json, IMcpResponseWriter writer, CancellationToken cancellationToken, bool isInternalCall)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("method", out var methodElement))
+            {
+                ConsoleHelper.WriteLine($"[MCP {InstanceTag}] invalid request (missing method), len={json.Length}");
+                await writer.WriteErrorAsync(ExtractId(root), -32600, "Invalid Request", cancellationToken);
+                return;
+            }
+
+            var method = methodElement.GetString() ?? string.Empty;
+            var id = ExtractId(root);
+            if (string.Equals(method, "tools/call", StringComparison.OrdinalIgnoreCase) &&
+                root.TryGetProperty("params", out var paramElement) &&
+                paramElement.TryGetProperty("name", out var nameElement))
+            {
+                var toolName = nameElement.GetString() ?? string.Empty;
+                ConsoleHelper.WriteLine($"[MCP {InstanceTag}] call {toolName} (id={id ?? "null"})");
+            }
+            else
+            {
+                ConsoleHelper.WriteLine($"[MCP {InstanceTag}] {method} (id={id ?? "null"})");
+            }
+
+            switch (method)
+            {
+                case "initialize":
+                    await writer.WriteResultAsync(id, BuildInitializeResult(), cancellationToken);
+                    break;
+                case "ping":
+                    await writer.WriteResultAsync(id, new { }, cancellationToken);
+                    break;
+                case "tools/list":
+                    await writer.WriteResultAsync(id, new { tools = BuildToolsList() }, cancellationToken);
+                    break;
+                case "tools/call":
+                    await HandleToolCallAsync(root, id, writer, cancellationToken, isInternalCall);
+                    break;
+                case "notifications/initialized":
+                    break;
+                default:
+                    if (id == null)
+                    {
+                        break;
+                    }
+
+                    await writer.WriteErrorAsync(id, -32601, $"Method not found: {method}", cancellationToken);
+                    break;
+            }
+        }
+        catch (JsonException)
+        {
+            ConsoleHelper.WriteLine($"[MCP {InstanceTag}] parse error, len={json.Length}");
+            await writer.WriteErrorAsync(null, -32700, "Parse error", cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "MCP 处理请求失败");
+            await writer.WriteErrorAsync(null, -32603, "Internal error", cancellationToken);
+        }
+    }
+
+    private async Task HandleToolCallAsync(JsonElement root, object? id, IMcpResponseWriter writer, CancellationToken ct, bool isInternalCall)
     {
         if (!root.TryGetProperty("params", out var paramsElement))
         {
@@ -289,6 +320,20 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
             case "bgi.config.reload":
                 var reloaded = _configService.ReloadFromStorage();
                 await writer.WriteResultAsync(id, ToolTextResult(JsonSerializer.Serialize(new { ok = reloaded }, JsonOptions), !reloaded), ct);
+                return;
+            case "bgi.leyline.get":
+                await writer.WriteResultAsync(id, ToolTextResult(GetLeyLineSettings()), ct);
+                return;
+            case "bgi.leyline.set":
+                var leylineSetResult = SetLeyLineSettings(argsElement, isInternalCall);
+                await writer.WriteResultAsync(id, ToolTextResult(leylineSetResult.text, leylineSetResult.isError), ct);
+                return;
+            case "bgi.notification.channels":
+                await writer.WriteResultAsync(id, ToolTextResult(GetNotificationChannels()), ct);
+                return;
+            case "bgi.notification.test":
+                var notificationTestResult = await RunNotificationTestAsync(argsElement, ct);
+                await writer.WriteResultAsync(id, ToolTextResult(notificationTestResult.text, notificationTestResult.isError), ct);
                 return;
             case "bgi.get_logs":
                 await writer.WriteResultAsync(id, ToolTextResult(GetLogs(argsElement)), ct);
@@ -4935,6 +4980,356 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
         return ("{\"ok\":true}", false);
     }
 
+    private string GetLeyLineSettings()
+    {
+        var config = _configService.Get().AutoLeyLineOutcropConfig;
+        return JsonSerializer.Serialize(new
+        {
+            leyLineOutcropType = config.LeyLineOutcropType,
+            country = config.Country,
+            isResinExhaustionMode = config.IsResinExhaustionMode,
+            openModeCountMin = config.OpenModeCountMin,
+            count = config.Count,
+            useTransientResin = config.UseTransientResin,
+            useFragileResin = config.UseFragileResin,
+            team = config.Team,
+            friendshipTeam = config.FriendshipTeam,
+            timeout = config.Timeout,
+            useAdventurerHandbook = config.UseAdventurerHandbook,
+            isNotification = config.IsNotification,
+            isGoToSynthesizer = config.IsGoToSynthesizer,
+            scanDropsAfterRewardEnabled = config.ScanDropsAfterRewardEnabled,
+            scanDropsAfterRewardSeconds = config.ScanDropsAfterRewardSeconds
+        }, JsonOptions);
+    }
+
+    private (string text, bool isError) SetLeyLineSettings(JsonElement argsElement, bool isInternalCall)
+    {
+        if (argsElement.ValueKind != JsonValueKind.Object)
+        {
+            return ("Invalid arguments", true);
+        }
+
+        if (!isInternalCall && !_configService.Get().McpConfig.AllowConfigSet)
+        {
+            return ("leyline.set disabled for external MCP. Enable \"允许 MCP 修改配置\" in settings first.", true);
+        }
+
+        var updated = false;
+        RunOnUiThread(() =>
+        {
+            var config = _configService.Get().AutoLeyLineOutcropConfig;
+
+            if (argsElement.TryGetProperty("leyLineOutcropType", out var leyTypeElement) &&
+                leyTypeElement.ValueKind == JsonValueKind.String)
+            {
+                var value = (leyTypeElement.GetString() ?? string.Empty).Trim();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    config.LeyLineOutcropType = value;
+                    updated = true;
+                }
+            }
+
+            if (argsElement.TryGetProperty("country", out var countryElement) &&
+                countryElement.ValueKind == JsonValueKind.String)
+            {
+                var value = (countryElement.GetString() ?? string.Empty).Trim();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    config.Country = value;
+                    updated = true;
+                }
+            }
+
+            if (argsElement.TryGetProperty("isResinExhaustionMode", out var resinModeElement) &&
+                (resinModeElement.ValueKind == JsonValueKind.True || resinModeElement.ValueKind == JsonValueKind.False))
+            {
+                config.IsResinExhaustionMode = resinModeElement.GetBoolean();
+                updated = true;
+            }
+
+            if (argsElement.TryGetProperty("openModeCountMin", out var openModeCountMinElement) &&
+                (openModeCountMinElement.ValueKind == JsonValueKind.True || openModeCountMinElement.ValueKind == JsonValueKind.False))
+            {
+                config.OpenModeCountMin = openModeCountMinElement.GetBoolean();
+                updated = true;
+            }
+
+            if (argsElement.TryGetProperty("count", out var countElement) && countElement.TryGetInt32(out var count))
+            {
+                config.Count = Math.Max(1, count);
+                updated = true;
+            }
+
+            if (argsElement.TryGetProperty("useTransientResin", out var transientResinElement) &&
+                (transientResinElement.ValueKind == JsonValueKind.True || transientResinElement.ValueKind == JsonValueKind.False))
+            {
+                config.UseTransientResin = transientResinElement.GetBoolean();
+                updated = true;
+            }
+
+            if (argsElement.TryGetProperty("useFragileResin", out var fragileResinElement) &&
+                (fragileResinElement.ValueKind == JsonValueKind.True || fragileResinElement.ValueKind == JsonValueKind.False))
+            {
+                config.UseFragileResin = fragileResinElement.GetBoolean();
+                updated = true;
+            }
+
+            if (argsElement.TryGetProperty("team", out var teamElement) &&
+                teamElement.ValueKind == JsonValueKind.String)
+            {
+                config.Team = (teamElement.GetString() ?? string.Empty).Trim();
+                updated = true;
+            }
+
+            if (argsElement.TryGetProperty("friendshipTeam", out var friendshipTeamElement) &&
+                friendshipTeamElement.ValueKind == JsonValueKind.String)
+            {
+                config.FriendshipTeam = (friendshipTeamElement.GetString() ?? string.Empty).Trim();
+                updated = true;
+            }
+
+            if (argsElement.TryGetProperty("timeout", out var timeoutElement) && timeoutElement.TryGetInt32(out var timeout))
+            {
+                config.Timeout = Math.Max(1, timeout);
+                updated = true;
+            }
+
+            if (argsElement.TryGetProperty("useAdventurerHandbook", out var handbookElement) &&
+                (handbookElement.ValueKind == JsonValueKind.True || handbookElement.ValueKind == JsonValueKind.False))
+            {
+                config.UseAdventurerHandbook = handbookElement.GetBoolean();
+                updated = true;
+            }
+
+            if (argsElement.TryGetProperty("isNotification", out var notificationElement) &&
+                (notificationElement.ValueKind == JsonValueKind.True || notificationElement.ValueKind == JsonValueKind.False))
+            {
+                config.IsNotification = notificationElement.GetBoolean();
+                updated = true;
+            }
+
+            if (argsElement.TryGetProperty("isGoToSynthesizer", out var synthesizerElement) &&
+                (synthesizerElement.ValueKind == JsonValueKind.True || synthesizerElement.ValueKind == JsonValueKind.False))
+            {
+                config.IsGoToSynthesizer = synthesizerElement.GetBoolean();
+                updated = true;
+            }
+
+            if (argsElement.TryGetProperty("scanDropsAfterRewardEnabled", out var scanDropsEnabledElement) &&
+                (scanDropsEnabledElement.ValueKind == JsonValueKind.True || scanDropsEnabledElement.ValueKind == JsonValueKind.False))
+            {
+                config.ScanDropsAfterRewardEnabled = scanDropsEnabledElement.GetBoolean();
+                updated = true;
+            }
+
+            if (argsElement.TryGetProperty("scanDropsAfterRewardSeconds", out var scanDropsSecondsElement) &&
+                scanDropsSecondsElement.TryGetInt32(out var scanDropsSeconds))
+            {
+                config.ScanDropsAfterRewardSeconds = Math.Clamp(scanDropsSeconds, 0, 60);
+                updated = true;
+            }
+        });
+
+        if (!updated)
+        {
+            return ("No fields to update. Provide at least one auto leyline setting.", true);
+        }
+
+        return (GetLeyLineSettings(), false);
+    }
+
+    private string GetNotificationChannels()
+    {
+        return JsonSerializer.Serialize(new { channels = NotificationTestChannels }, JsonOptions);
+    }
+
+    private async Task<(string text, bool isError)> RunNotificationTestAsync(JsonElement argsElement, CancellationToken ct)
+    {
+        if (argsElement.ValueKind != JsonValueKind.Object ||
+            !argsElement.TryGetProperty("channel", out var channelElement) ||
+            channelElement.ValueKind != JsonValueKind.String)
+        {
+            return (JsonSerializer.Serialize(new
+            {
+                ok = false,
+                error = "Missing channel",
+                channels = NotificationTestChannels
+            }, JsonOptions), true);
+        }
+
+        var channel = NormalizeNotificationTestChannel(channelElement.GetString());
+        if (string.IsNullOrWhiteSpace(channel))
+        {
+            return (JsonSerializer.Serialize(new
+            {
+                ok = false,
+                error = "invalid channel",
+                channels = NotificationTestChannels
+            }, JsonOptions), true);
+        }
+
+        NotificationService notificationService;
+        try
+        {
+            notificationService = NotificationService.Instance();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "通知服务未就绪，无法执行 MCP 通知测试");
+            return (JsonSerializer.Serialize(new
+            {
+                ok = false,
+                channel,
+                error = "notification service unavailable"
+            }, JsonOptions), true);
+        }
+
+        TryRefreshNotificationNotifiers();
+        var (isSuccess, message) = await TestNotificationChannelAsync(notificationService, channel, ct);
+        return (JsonSerializer.Serialize(new
+        {
+            ok = isSuccess,
+            channel,
+            isSuccess,
+            message
+        }, JsonOptions), !isSuccess);
+    }
+
+    private async Task<(bool IsSuccess, string Message)> TestNotificationChannelAsync(NotificationService notificationService, string channel, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        switch (channel)
+        {
+            case "webhook":
+            {
+                var result = await notificationService.TestNotifierAsync<WebhookNotifier>();
+                return (result.IsSuccess, result.Message);
+            }
+            case "websocket":
+            {
+                var result = await notificationService.TestNotifierAsync<WebSocketNotifier>();
+                return (result.IsSuccess, result.Message);
+            }
+            case "windows_uwp":
+            {
+                var result = await notificationService.TestNotifierAsync<WindowsUwpNotifier>();
+                return (result.IsSuccess, result.Message);
+            }
+            case "feishu":
+            {
+                var result = await notificationService.TestNotifierAsync<FeishuNotifier>();
+                return (result.IsSuccess, result.Message);
+            }
+            case "onebot":
+            {
+                var result = await notificationService.TestNotifierAsync<OneBotNotifier>();
+                return (result.IsSuccess, result.Message);
+            }
+            case "workweixin":
+            {
+                var result = await notificationService.TestNotifierAsync<WorkWeixinNotifier>();
+                return (result.IsSuccess, result.Message);
+            }
+            case "email":
+            {
+                var result = await notificationService.TestNotifierAsync<EmailNotifier>();
+                return (result.IsSuccess, result.Message);
+            }
+            case "bark":
+            {
+                var result = await notificationService.TestNotifierAsync<BarkNotifier>();
+                return (result.IsSuccess, result.Message);
+            }
+            case "telegram":
+            {
+                var result = await notificationService.TestNotifierAsync<TelegramNotifier>();
+                return (result.IsSuccess, result.Message);
+            }
+            case "xxtui":
+            {
+                var result = await notificationService.TestNotifierAsync<XxtuiNotifier>();
+                return (result.IsSuccess, result.Message);
+            }
+            case "dingding":
+            {
+                var result = await notificationService.TestNotifierAsync<DingDingWebhook>();
+                return (result.IsSuccess, result.Message);
+            }
+            case "discord":
+            {
+                var result = await notificationService.TestNotifierAsync<DiscordWebhookNotifier>();
+                return (result.IsSuccess, result.Message);
+            }
+            case "serverchan":
+            {
+                var result = await notificationService.TestNotifierAsync<ServerChanNotifier>();
+                return (result.IsSuccess, result.Message);
+            }
+            default:
+                return (false, $"invalid channel: {channel}");
+        }
+    }
+
+    private void TryRefreshNotificationNotifiers()
+    {
+        try
+        {
+            NotificationService.Instance().RefreshNotifiers();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "刷新通知器失败，继续使用现有状态");
+        }
+    }
+
+    private static string? NormalizeNotificationTestChannel(string? channel)
+    {
+        if (string.IsNullOrWhiteSpace(channel))
+        {
+            return null;
+        }
+
+        var normalized = channel.Trim()
+            .ToLowerInvariant()
+            .Replace('_', '-')
+            .Replace(" ", string.Empty);
+        return normalized switch
+        {
+            "webhook" => "webhook",
+            "websocket" => "websocket",
+            "web-socket" => "websocket",
+            "windowsuwp" => "windows_uwp",
+            "windows-uwp" => "windows_uwp",
+            "uwp" => "windows_uwp",
+            "feishu" => "feishu",
+            "onebot" => "onebot",
+            "one-bot" => "onebot",
+            "workweixin" => "workweixin",
+            "work-weixin" => "workweixin",
+            "wecom" => "workweixin",
+            "email" => "email",
+            "mail" => "email",
+            "bark" => "bark",
+            "telegram" => "telegram",
+            "tg" => "telegram",
+            "xxtui" => "xxtui",
+            "xx-tui" => "xxtui",
+            "dingding" => "dingding",
+            "ding-ding" => "dingding",
+            "dingdingwebhook" => "dingding",
+            "dingding-webhook" => "dingding",
+            "dingtalk" => "dingding",
+            "discord" => "discord",
+            "discordwebhook" => "discord",
+            "discord-webhook" => "discord",
+            "serverchan" => "serverchan",
+            "server-chan" => "serverchan",
+            _ => null
+        };
+    }
+
     private Task StartDispatcherAsync()
     {
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -5111,6 +5506,71 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
                 {
                     type = "object",
                     properties = new { },
+                    additionalProperties = false
+                }
+            },
+            new
+            {
+                name = "bgi.leyline.get",
+                description = "获取自动地脉花当前配置摘要",
+                inputSchema = new
+                {
+                    type = "object",
+                    properties = new { },
+                    additionalProperties = false
+                }
+            },
+            new
+            {
+                name = "bgi.leyline.set",
+                description = "设置自动地脉花配置（外部 MCP 需开启“允许 MCP 修改配置”）",
+                inputSchema = new
+                {
+                    type = "object",
+                    properties = new
+                    {
+                        leyLineOutcropType = new { type = "string" },
+                        country = new { type = "string" },
+                        isResinExhaustionMode = new { type = "boolean" },
+                        openModeCountMin = new { type = "boolean" },
+                        count = new { type = "integer", minimum = 1 },
+                        useTransientResin = new { type = "boolean" },
+                        useFragileResin = new { type = "boolean" },
+                        team = new { type = "string" },
+                        friendshipTeam = new { type = "string" },
+                        timeout = new { type = "integer", minimum = 1 },
+                        useAdventurerHandbook = new { type = "boolean" },
+                        isNotification = new { type = "boolean" },
+                        isGoToSynthesizer = new { type = "boolean" },
+                        scanDropsAfterRewardEnabled = new { type = "boolean" },
+                        scanDropsAfterRewardSeconds = new { type = "integer", minimum = 0, maximum = 60 }
+                    },
+                    additionalProperties = false
+                }
+            },
+            new
+            {
+                name = "bgi.notification.channels",
+                description = "列出支持测试的通知通道标识",
+                inputSchema = new
+                {
+                    type = "object",
+                    properties = new { },
+                    additionalProperties = false
+                }
+            },
+            new
+            {
+                name = "bgi.notification.test",
+                description = "测试指定通知通道（仅测试已在软件内配置好的通道）",
+                inputSchema = new
+                {
+                    type = "object",
+                    properties = new
+                    {
+                        channel = new { type = "string", description = "例如 webhook / websocket / telegram / email / bark / discord" }
+                    },
+                    required = new[] { "channel" },
                     additionalProperties = false
                 }
             },
@@ -6535,7 +6995,30 @@ internal sealed class McpMessageReader
     }
 }
 
-internal sealed class McpMessageWriter
+internal interface IMcpResponseWriter
+{
+    Task WriteResultAsync(object? id, object result, CancellationToken ct);
+    Task WriteErrorAsync(object? id, int code, string message, CancellationToken ct);
+}
+
+internal sealed class BufferedMcpResponseWriter : IMcpResponseWriter
+{
+    public string? ResponseJson { get; private set; }
+
+    public Task WriteResultAsync(object? id, object result, CancellationToken ct)
+    {
+        ResponseJson = McpMessageWriter.SerializeResultPayloadJson(id, result);
+        return Task.CompletedTask;
+    }
+
+    public Task WriteErrorAsync(object? id, int code, string message, CancellationToken ct)
+    {
+        ResponseJson = McpMessageWriter.SerializeErrorPayloadJson(id, code, message);
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class McpMessageWriter : IMcpResponseWriter
 {
     private readonly Stream _stream;
 
@@ -6546,6 +7029,16 @@ internal sealed class McpMessageWriter
 
     public Task WriteResultAsync(object? id, object result, CancellationToken ct)
     {
+        return WritePayloadAsync(SerializeResultPayloadJson(id, result), ct);
+    }
+
+    public Task WriteErrorAsync(object? id, int code, string message, CancellationToken ct)
+    {
+        return WritePayloadAsync(SerializeErrorPayloadJson(id, code, message), ct);
+    }
+
+    public static string SerializeResultPayloadJson(object? id, object result)
+    {
         var payload = new
         {
             jsonrpc = "2.0",
@@ -6553,10 +7046,10 @@ internal sealed class McpMessageWriter
             result
         };
 
-        return WritePayloadAsync(payload, ct);
+        return JsonSerializer.Serialize(payload, McpRequestHandler.JsonOptions);
     }
 
-    public Task WriteErrorAsync(object? id, int code, string message, CancellationToken ct)
+    public static string SerializeErrorPayloadJson(object? id, int code, string message)
     {
         var payload = new
         {
@@ -6569,12 +7062,11 @@ internal sealed class McpMessageWriter
             }
         };
 
-        return WritePayloadAsync(payload, ct);
+        return JsonSerializer.Serialize(payload, McpRequestHandler.JsonOptions);
     }
 
-    private async Task WritePayloadAsync(object payload, CancellationToken ct)
+    private async Task WritePayloadAsync(string json, CancellationToken ct)
     {
-        var json = JsonSerializer.Serialize(payload, McpRequestHandler.JsonOptions);
         var body = Encoding.UTF8.GetBytes(json);
         var header = Encoding.ASCII.GetBytes($"Content-Length: {body.Length}\r\n\r\n");
         await _stream.WriteAsync(header, 0, header.Length, ct);

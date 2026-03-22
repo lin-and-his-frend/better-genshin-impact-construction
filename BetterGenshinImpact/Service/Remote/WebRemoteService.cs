@@ -3039,6 +3039,16 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             {
                 config.IsGoToSynthesizer = payload.IsGoToSynthesizer.Value;
             }
+
+            if (payload.ScanDropsAfterRewardEnabled.HasValue)
+            {
+                config.ScanDropsAfterRewardEnabled = payload.ScanDropsAfterRewardEnabled.Value;
+            }
+
+            if (payload.ScanDropsAfterRewardSeconds.HasValue)
+            {
+                config.ScanDropsAfterRewardSeconds = Math.Clamp(payload.ScanDropsAfterRewardSeconds.Value, 0, 60);
+            }
         }
 
         await WriteJsonAsync(response, BuildAutoLeyLineSettings(), ct);
@@ -4507,7 +4517,9 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             timeout = config.Timeout,
             useAdventurerHandbook = config.UseAdventurerHandbook,
             isNotification = config.IsNotification,
-            isGoToSynthesizer = config.IsGoToSynthesizer
+            isGoToSynthesizer = config.IsGoToSynthesizer,
+            scanDropsAfterRewardEnabled = config.ScanDropsAfterRewardEnabled,
+            scanDropsAfterRewardSeconds = config.ScanDropsAfterRewardSeconds
         };
     }
 
@@ -4818,6 +4830,16 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
         if (TryGetBool(argsElement, "isGoToSynthesizer", out var isGoToSynthesizer))
         {
             config.IsGoToSynthesizer = isGoToSynthesizer;
+        }
+
+        if (TryGetBool(argsElement, "scanDropsAfterRewardEnabled", out var scanDropsAfterRewardEnabled))
+        {
+            config.ScanDropsAfterRewardEnabled = scanDropsAfterRewardEnabled;
+        }
+
+        if (TryGetInt(argsElement, "scanDropsAfterRewardSeconds", out var scanDropsAfterRewardSeconds))
+        {
+            config.ScanDropsAfterRewardSeconds = Math.Clamp(scanDropsAfterRewardSeconds, 0, 60);
         }
 
         StartBackgroundTask(() =>
@@ -5418,6 +5440,8 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
         public bool? UseAdventurerHandbook { get; set; }
         public bool? IsNotification { get; set; }
         public bool? IsGoToSynthesizer { get; set; }
+        public bool? ScanDropsAfterRewardEnabled { get; set; }
+        public int? ScanDropsAfterRewardSeconds { get; set; }
     }
 
     private sealed class NotificationSettingsRequest

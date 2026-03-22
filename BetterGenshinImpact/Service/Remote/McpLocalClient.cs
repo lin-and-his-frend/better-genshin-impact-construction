@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.IO.Pipes;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -129,32 +127,7 @@ public sealed class McpLocalClient
 
     private async Task<JsonDocument> SendAsync(string payloadJson, CancellationToken ct)
     {
-        var pipeName = $"bgi-mcp-{Guid.NewGuid():N}";
-        using var server = new NamedPipeServerStream(pipeName, PipeDirection.InOut, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
-        using var client = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut, PipeOptions.Asynchronous);
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-
-        var serverTask = Task.Run(async () =>
-        {
-            await server.WaitForConnectionAsync(cts.Token).ConfigureAwait(false);
-            await _requestHandler.HandleConnectionAsync(server, cts.Token).ConfigureAwait(false);
-        }, cts.Token);
-
-        await client.ConnectAsync(cts.Token).ConfigureAwait(false);
-        await WritePayloadAsync(client, payloadJson, cts.Token).ConfigureAwait(false);
-
-        var reader = new McpMessageReader(client);
-        var responseJson = await reader.ReadAsync(cts.Token).ConfigureAwait(false);
-        cts.Cancel();
-
-        try
-        {
-            await serverTask.ConfigureAwait(false);
-        }
-        catch
-        {
-            // ignore server cancellation exceptions
-        }
+        var responseJson = await _requestHandler.HandleRequestAsync(payloadJson, isInternalCall: true, ct).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(responseJson))
         {
@@ -162,15 +135,6 @@ public sealed class McpLocalClient
         }
 
         return JsonDocument.Parse(responseJson);
-    }
-
-    private static async Task WritePayloadAsync(Stream stream, string json, CancellationToken ct)
-    {
-        var body = Encoding.UTF8.GetBytes(json);
-        var header = Encoding.ASCII.GetBytes($"Content-Length: {body.Length}\r\n\r\n");
-        await stream.WriteAsync(header, 0, header.Length, ct).ConfigureAwait(false);
-        await stream.WriteAsync(body, 0, body.Length, ct).ConfigureAwait(false);
-        await stream.FlushAsync(ct).ConfigureAwait(false);
     }
 
     private static bool TryGetError(JsonElement root, out string message)

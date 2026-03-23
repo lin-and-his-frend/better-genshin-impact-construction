@@ -32,6 +32,10 @@ public partial class AiChatViewModel : ViewModel
     private const string DefaultSystemPrompt =
         "你是 BetterGI 内置 AI 助手。你可以通过 MCP 工具读取或控制软件状态。\n" +
         "当你需要调用 MCP 工具时，优先输出 JSON 对象：{\"toolCalls\":[{\"name\":\"工具名\",\"arguments\":{...}}]}。\n" +
+        "对于执行型、排查型、配置修改型、脚本操作型、多步骤请求，先给出简短任务列表，再继续执行。\n" +
+        "这类请求如果需要 MCP，优先输出 JSON 对象：{\"reply\":\"任务列表...\",\"toolCalls\":[{\"name\":\"工具名\",\"arguments\":{...}}]}。\n" +
+        "reply 只写给用户看的任务列表或执行计划，不要在 reply 里写 JSON 说明。\n" +
+        "如果是简单知识问答、FAQ、单句解释，且不需要执行操作，可以直接自然语言回答，不必强制列任务列表。\n" +
         "当不需要工具，或已拿到 MCP_RESULT 后，必须直接输出自然语言纯文本（面向用户可读），禁止输出 JSON、代码块或 toolCalls。\n" +
         "也兼容 ```mcp 代码块（每个代码块 JSON 结构为 {\"name\":\"工具名\",\"arguments\":{...}}）。\n" +
         "收到 MCP_RESULT 后再给出自然语言总结。\n" +
@@ -75,14 +79,16 @@ public partial class AiChatViewModel : ViewModel
         "1) 严禁再发起任何 MCP 工具调用；\n" +
         "2) 严禁输出 JSON、代码块、toolCalls；\n" +
         "3) 仅基于已有 MCP_RESULT，用自然语言直接回答用户问题；\n" +
-        "4) 需要给出数量时尽量结构化列点，证据不足要明确说明。";
+        "4) 若前面已经给出任务列表，不要重新规划，直接按该列表汇报已完成/未完成项与结果；\n" +
+        "5) 需要给出数量时尽量结构化列点，证据不足要明确说明。";
     private const string NoToolFallbackPrompt =
         "你现在只能输出最终用户答复：\n" +
         "1) 严禁调用 MCP 工具；\n" +
         "2) 严禁输出 JSON、代码块、toolCalls、函数名；\n" +
         "3) 仅根据已有 MCP_RESULT 作答，禁止编造；\n" +
         "4) 若证据不足，必须明确说明“不足以确定”，并给出下一步可执行建议；\n" +
-        "5) 只输出给用户看的自然语言正文。";
+        "5) 若前面已经给出任务列表，不要重新规划，直接基于已有结果汇报进展与结论；\n" +
+        "6) 只输出给用户看的自然语言正文。";
     private const string ContextCompressionPrompt =
         "Based on our full conversation history, produce a concise summary of key takeaways and/or project progress.\n" +
         "1. Systematically cover all core topics discussed and the final conclusion/outcome for each; clearly highlight the latest primary focus.\n" +
@@ -137,6 +143,15 @@ public partial class AiChatViewModel : ViewModel
         "\"(?:description|summary|snippet)\"\\s*:\\s*\"(?<value>(?:\\\\.|[^\"\\\\])*)\"",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex ScriptNameHintRegex = new(@"[A-Za-z]+\d+|\d{2,}|[\u4e00-\u9fff]{2,}", RegexOptions.Compiled);
+    private static readonly Regex MarkdownImageRegex = new(
+        @"!\[(?<alt>[^\]]*)\]\((?<url>[^)\s]+)(?:\s+[""'][^""']*[""'])?\)",
+        RegexOptions.Compiled);
+    private static readonly Regex MarkdownLinkRegex = new(
+        @"\[(?<text>[^\]]+)\]\((?<url>[^)\s]+)(?:\s+[""'][^""']*[""'])?\)",
+        RegexOptions.Compiled);
+    private static readonly Regex AbsoluteUrlRegex = new(
+        @"\bhttps?://[^\s<>()]+",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly JsonSerializerOptions McpPrettyJsonOptions = new()
     {
         WriteIndented = true,
@@ -165,6 +180,16 @@ public partial class AiChatViewModel : ViewModel
         "script.list",
         "script.run",
         "script.subscribe"
+    };
+    private static readonly HashSet<string> InformationalExecutionPlanSkipTools = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "bgi.web.search",
+        "search_docs",
+        "get_feature_detail",
+        "get_download_info",
+        "get_faq",
+        "get_quickstart",
+        "bgi.script.detail"
     };
 
     private readonly AiChatService _chatService;
@@ -391,7 +416,9 @@ public partial class AiChatViewModel : ViewModel
             var toolExecutionCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var executedWebSearchQueryKeys = new HashSet<string>(StringComparer.Ordinal);
             var blockedByToolGuard = false;
+            var blockedByAutoExecute = false;
             var executedMcpRound = false;
+            var planningMessageIndex = -1;
             var toolCalls = ParseMcpToolCalls(reply);
             toolCalls = CoerceRealtimeFeatureToolCalls(toolCalls, intent.RealtimeFeatureQueryIntent, out var coerceNotice);
             if (!string.IsNullOrWhiteSpace(coerceNotice))
@@ -455,7 +482,25 @@ public partial class AiChatViewModel : ViewModel
                 LogChat("system", guardNotice);
             }
 
-            if (toolCalls.Count > 0 && replyMessageIndex >= 0)
+            if (toolCalls.Count > 0 && ShouldShowExecutionPlanForToolCalls(intent, toolCalls, reply))
+            {
+                var planningReply = BuildVisibleExecutionPlanReply(reply, toolCalls);
+                if (!string.IsNullOrWhiteSpace(planningReply))
+                {
+                    planningMessageIndex = UpsertAssistantPlanningMessage(replyMessageIndex, planningReply);
+                    if (planningMessageIndex >= 0)
+                    {
+                        LogChat("assistant_plan", planningReply);
+                        replyMessageIndex = -1;
+                    }
+                }
+                else if (replyMessageIndex >= 0)
+                {
+                    RemoveChatMessageAt(replyMessageIndex);
+                    replyMessageIndex = -1;
+                }
+            }
+            else if (toolCalls.Count > 0 && replyMessageIndex >= 0)
             {
                 RemoveChatMessageAt(replyMessageIndex);
                 replyMessageIndex = -1;
@@ -463,16 +508,25 @@ public partial class AiChatViewModel : ViewModel
 
             if (toolCalls.Count > 0 && !Config.AutoExecuteMcpToolCalls)
             {
-                var blockedNames = string.Join(", ",
-                    toolCalls.Select(call => call.Name)
-                        .Where(name => !string.IsNullOrWhiteSpace(name))
-                        .Distinct(StringComparer.OrdinalIgnoreCase)
-                        .Take(4));
+                var blockedToolNames = toolCalls.Select(call => call.Name)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Take(4)
+                    .ToArray();
+                var blockedNames = string.Join(", ", blockedToolNames);
                 var notice = string.IsNullOrWhiteSpace(blockedNames)
                     ? "已拦截 AI 生成的 MCP 自动调用。若需自动执行，请在 AI 设置中开启“自动执行 MCP 工具调用”。"
                     : $"已拦截 AI 生成的 MCP 自动调用：{blockedNames}。若需自动执行，请在 AI 设置中开启“自动执行 MCP 工具调用”。";
                 AddChatMessage("system", notice);
                 LogChat("system", notice);
+                if (planningMessageIndex >= 0)
+                {
+                    StatusText = "已拦截自动执行";
+                    return;
+                }
+
+                blockedByAutoExecute = true;
+                reply = BuildAutoExecuteBlockedReply(blockedToolNames);
                 toolCalls = [];
             }
 
@@ -528,7 +582,9 @@ public partial class AiChatViewModel : ViewModel
 
             if (string.IsNullOrWhiteSpace(reply))
             {
-                reply = blockedByToolGuard
+                reply = blockedByAutoExecute
+                    ? BuildAutoExecuteBlockedReply(Array.Empty<string>())
+                    : blockedByToolGuard
                     ? "联网检索调用已停止（防止重复调用）。请提供更具体关键词（例如“可莉90级突破+天赋材料清单”），我会基于现有结果直接给结论。"
                     : executedMcpRound
                         ? "我已完成 MCP 调用，但整理答案失败。请重试一次，我会直接给出自然语言结果。"
@@ -545,7 +601,7 @@ public partial class AiChatViewModel : ViewModel
             }
 
             LogChat("assistant", reply);
-            StatusText = "完成";
+            StatusText = blockedByAutoExecute ? "已拦截自动执行" : "完成";
         }
         catch (OperationCanceledException)
         {
@@ -814,6 +870,326 @@ public partial class AiChatViewModel : ViewModel
         }
 
         return calls;
+    }
+
+    private static string BuildVisibleExecutionPlanReply(string rawReply, IReadOnlyList<McpToolCall> toolCalls)
+    {
+        if (TryParseJsonModeEnvelope(rawReply, out var plannedToolCalls, out var assistantReply) &&
+            ShouldKeepAssistantReplyAsExecutionPlan(assistantReply) &&
+            DoExecutionPlanToolCallsMatch(plannedToolCalls, toolCalls))
+        {
+            return SanitizeExecutionPlanReplyForDisplay(NormalizeExecutionPlanReply(assistantReply!));
+        }
+
+        var toolNames = toolCalls
+            .Select(call => call.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToArray();
+        return SanitizeExecutionPlanReplyForDisplay(BuildFallbackExecutionPlanReply(toolNames));
+    }
+
+    private static bool ShouldShowExecutionPlanForToolCalls(IntentClassification intent, IReadOnlyList<McpToolCall> toolCalls, string? rawReply = null)
+    {
+        if (toolCalls.Count == 0)
+        {
+            return false;
+        }
+
+        if (ShouldKeepAssistantReplyAsExecutionPlan(TryExtractAssistantReplyFromEnvelope(rawReply ?? string.Empty)))
+        {
+            return true;
+        }
+
+        var allInformational = toolCalls.All(call => InformationalExecutionPlanSkipTools.Contains(call.Name));
+        if (!allInformational)
+        {
+            return true;
+        }
+
+        return intent.PathingPriorityIntent ||
+               intent.ScriptSubscribeIntent ||
+               intent.RealtimeFeatureQueryIntent ||
+               intent.StatusQueryIntent ||
+               intent.AllFeaturesRequest ||
+               intent.IsAllRequest ||
+               !string.IsNullOrWhiteSpace(intent.FeatureKey);
+    }
+
+    private static bool DoExecutionPlanToolCallsMatch(IReadOnlyList<McpToolCall> plannedToolCalls, IReadOnlyList<McpToolCall> actualToolCalls)
+    {
+        if (plannedToolCalls.Count != actualToolCalls.Count)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < plannedToolCalls.Count; i++)
+        {
+            var plannedName = plannedToolCalls[i].Name?.Trim();
+            var actualName = actualToolCalls[i].Name?.Trim();
+            if (!string.Equals(plannedName, actualName, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string? TryExtractAssistantReplyFromEnvelope(string rawReply)
+    {
+        if (!TryParseJsonModeEnvelope(rawReply, out _, out var assistantReply) ||
+            string.IsNullOrWhiteSpace(assistantReply))
+        {
+            return null;
+        }
+
+        return assistantReply.Trim();
+    }
+
+    private static bool ShouldKeepAssistantReplyAsExecutionPlan(string? assistantReply)
+    {
+        if (string.IsNullOrWhiteSpace(assistantReply))
+        {
+            return false;
+        }
+
+        var text = assistantReply.Trim();
+        if (text.Contains("任务", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("步骤", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("计划", StringComparison.OrdinalIgnoreCase) ||
+            text.Contains("清单", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var lines = text
+            .Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (lines.Length == 0)
+        {
+            return false;
+        }
+
+        var numberedCount = lines.Count(line => Regex.IsMatch(line, @"^\d+\.\s"));
+        if (numberedCount >= 2)
+        {
+            return true;
+        }
+
+        var bulletCount = lines.Count(line => line.StartsWith("- ", StringComparison.Ordinal) ||
+                                              line.StartsWith("* ", StringComparison.Ordinal) ||
+                                              line.StartsWith("+ ", StringComparison.Ordinal));
+        if (bulletCount >= 2)
+        {
+            return true;
+        }
+
+        return text.Contains("先", StringComparison.OrdinalIgnoreCase) &&
+               (text.Contains("再", StringComparison.OrdinalIgnoreCase) ||
+                text.Contains("然后", StringComparison.OrdinalIgnoreCase) ||
+                text.Contains("接着", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string NormalizeExecutionPlanReply(string assistantReply)
+    {
+        var text = assistantReply.Trim();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return string.Empty;
+        }
+
+        if (text.StartsWith("任务列表", StringComparison.OrdinalIgnoreCase) ||
+            text.StartsWith("执行计划", StringComparison.OrdinalIgnoreCase) ||
+            text.StartsWith("计划", StringComparison.OrdinalIgnoreCase))
+        {
+            return text;
+        }
+
+        return $"任务列表：\n{text}";
+    }
+
+    private static string SanitizeExecutionPlanReplyForDisplay(string planningReply)
+    {
+        if (string.IsNullOrWhiteSpace(planningReply))
+        {
+            return string.Empty;
+        }
+
+        var sanitized = MarkdownImageRegex.Replace(planningReply, match =>
+        {
+            var alt = match.Groups["alt"].Value.Trim();
+            var url = match.Groups["url"].Value.Trim();
+            if (IsAllowedExecutionPlanUrl(url))
+            {
+                return match.Value;
+            }
+
+            return string.IsNullOrWhiteSpace(alt) ? "[图片已省略]" : $"[图片已省略: {alt}]";
+        });
+
+        sanitized = MarkdownLinkRegex.Replace(sanitized, match =>
+        {
+            var text = match.Groups["text"].Value.Trim();
+            var url = match.Groups["url"].Value.Trim();
+            if (IsAllowedExecutionPlanUrl(url))
+            {
+                return match.Value;
+            }
+
+            return string.IsNullOrWhiteSpace(text) ? "外链已省略" : $"{text}（外链已省略）";
+        });
+
+        sanitized = AbsoluteUrlRegex.Replace(sanitized, match =>
+        {
+            var (url, suffix) = SplitUrlAndTrailingPunctuation(match.Value);
+            if (IsAllowedExecutionPlanUrl(url))
+            {
+                return match.Value;
+            }
+
+            return ObfuscateExternalUrl(url) + suffix;
+        });
+
+        return sanitized;
+    }
+
+    private static bool IsAllowedExecutionPlanUrl(string? urlText)
+    {
+        if (string.IsNullOrWhiteSpace(urlText) ||
+            !Uri.TryCreate(urlText.Trim(), UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var host = uri.Host.Trim();
+        return string.Equals(host, "bettergi.com", StringComparison.OrdinalIgnoreCase) ||
+               host.EndsWith(".bettergi.com", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ObfuscateExternalUrl(string url)
+    {
+        if (url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            return "hxxps://" + url["https://".Length..];
+        }
+
+        if (url.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        {
+            return "hxxp://" + url["http://".Length..];
+        }
+
+        return url;
+    }
+
+    private static (string Url, string Suffix) SplitUrlAndTrailingPunctuation(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return (string.Empty, string.Empty);
+        }
+
+        var end = value.Length;
+        while (end > 0 && IsTrailingUrlPunctuation(value[end - 1]))
+        {
+            end--;
+        }
+
+        return (value[..end], value[end..]);
+    }
+
+    private static bool IsTrailingUrlPunctuation(char c)
+    {
+        return c is '.' or ',' or '!' or '?' or ';' or ':' or ')' or ']' or '}' or '>' or '。' or '，' or '！' or '？' or '；' or '：' or '）' or '】' or '》';
+    }
+
+    private static string BuildFallbackExecutionPlanReply(IReadOnlyList<string> toolNames)
+    {
+        var safeToolNames = toolNames
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Take(4)
+            .ToArray();
+        var omittedCount = Math.Max(0, toolNames.Count - safeToolNames.Length);
+        var builder = new StringBuilder();
+        builder.AppendLine("任务列表：");
+
+        var step = 1;
+        if (safeToolNames.Length == 0)
+        {
+            builder.AppendLine($"{step}. 梳理当前请求并准备执行。");
+            step++;
+        }
+        else
+        {
+            foreach (var toolName in safeToolNames)
+            {
+                builder.AppendLine($"{step}. {DescribeToolForExecutionPlan(toolName)}。");
+                step++;
+            }
+        }
+
+        if (omittedCount > 0)
+        {
+            builder.AppendLine($"{step}. 继续完成剩余 {omittedCount} 个 MCP 动作。");
+            step++;
+        }
+
+        builder.AppendLine($"{step}. 根据执行结果整理结论并回复给你。");
+        builder.Append("我会按这个顺序继续执行。");
+        return builder.ToString();
+    }
+
+    private static string BuildAutoExecuteBlockedReply(IReadOnlyList<string> toolNames)
+    {
+        var safeToolNames = toolNames
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(4)
+            .ToArray();
+
+        if (safeToolNames.Length == 0)
+        {
+            return "这次请求需要调用 MCP 工具才能继续，但当前已关闭“自动执行 MCP 工具调用”，所以我没有继续执行。若需自动完成，请在 AI 设置中开启该选项后重试。";
+        }
+
+        return $"这次请求需要调用 MCP 工具才能继续（{string.Join("、", safeToolNames)}），但当前已关闭“自动执行 MCP 工具调用”，所以我没有继续执行。若需自动完成，请在 AI 设置中开启该选项后重试。";
+    }
+
+    private static string DescribeToolForExecutionPlan(string toolName)
+    {
+        return toolName.Trim().ToLowerInvariant() switch
+        {
+            "bgi.get_features" => "调用 bgi.get_features 读取当前实时功能状态",
+            "bgi.set_features" => "调用 bgi.set_features 调整相关功能开关",
+            "bgi.config.get" => "调用 bgi.config.get 读取当前配置",
+            "bgi.config.set" => "调用 bgi.config.set 更新目标配置",
+            "bgi.config.reload" => "调用 bgi.config.reload 重新加载配置",
+            "bgi.leyline.get" => "调用 bgi.leyline.get 读取自动地脉花配置",
+            "bgi.leyline.set" => "调用 bgi.leyline.set 更新自动地脉花配置",
+            "bgi.notification.channels" => "调用 bgi.notification.channels 获取可用通知通道",
+            "bgi.notification.test" => "调用 bgi.notification.test 测试通知通道",
+            "bgi.script.search" => "调用 bgi.script.search 检索匹配脚本",
+            "bgi.script.detail" => "调用 bgi.script.detail 查看脚本详情",
+            "bgi.script.subscribe" => "调用 bgi.script.subscribe 导入目标脚本",
+            "bgi.script.run" => "调用 bgi.script.run 执行目标脚本",
+            "bgi.script.list" => "调用 bgi.script.list 列出本地脚本",
+            "bgi.one_dragon.list" => "调用 bgi.one_dragon.list 读取一条龙配置",
+            "bgi.one_dragon.run" => "调用 bgi.one_dragon.run 执行一条龙任务",
+            "bgi.language.get" => "调用 bgi.language.get 查看当前语言设置",
+            "bgi.language.set" => "调用 bgi.language.set 修改语言设置",
+            "bgi.web.search" => "调用 bgi.web.search 获取联网信息",
+            "search_docs" => "调用 search_docs 检索官网文档",
+            "get_feature_detail" => "调用 get_feature_detail 查询功能说明",
+            "get_download_info" => "调用 get_download_info 查询下载信息",
+            "get_faq" => "调用 get_faq 查询常见问题",
+            "get_quickstart" => "调用 get_quickstart 查询快速上手指引",
+            "search_scripts" => "调用 search_scripts 搜索社区脚本",
+            _ => $"调用 {toolName} 获取所需信息或执行操作"
+        };
     }
 
     private void UpdateScriptCandidateCache(string toolName, string content)
@@ -4766,6 +5142,22 @@ public partial class AiChatViewModel : ViewModel
     private void AddChatMessage(string role, string content, int maxChars = DefaultMaxChatMessageChars)
     {
         _ = AddChatMessageAndGetIndex(role, content, maxChars);
+    }
+
+    private int UpsertAssistantPlanningMessage(int existingIndex, string planningReply, int maxChars = DefaultMaxChatMessageChars)
+    {
+        if (string.IsNullOrWhiteSpace(planningReply))
+        {
+            return -1;
+        }
+
+        if (existingIndex >= 0)
+        {
+            UpdateChatMessageAt(existingIndex, "assistant", planningReply, maxChars);
+            return existingIndex;
+        }
+
+        return AddChatMessageAndGetIndex("assistant", planningReply, maxChars);
     }
 
     private void UpdateChatMessageAt(int index, string role, string content, int maxChars = DefaultMaxChatMessageChars)

@@ -166,14 +166,14 @@ public sealed class JsonTranslationService : ITranslationService, IDisposable
     private IReadOnlyDictionary<string, string> LoadMap(string cultureName)
     {
         var path = GetMapFilePath(cultureName);
-        if (!File.Exists(path))
+        var json = UserFileService.ReadAllTextIfExists(path, Encoding.UTF8);
+        if (string.IsNullOrWhiteSpace(json))
         {
             return new Dictionary<string, string>(StringComparer.Ordinal);
         }
 
         try
         {
-            var json = File.ReadAllText(path, Encoding.UTF8);
             var dict = JsonConvert.DeserializeObject<Dictionary<string, string>>(json) ?? new Dictionary<string, string>();
             return new Dictionary<string, string>(dict, StringComparer.Ordinal);
         }
@@ -308,7 +308,7 @@ public sealed class JsonTranslationService : ITranslationService, IDisposable
 
     private static Dictionary<string, MissingItem> LoadMissing(string filePath)
     {
-        var json = File.ReadAllText(filePath, Encoding.UTF8);
+        var json = UserFileService.ReadAllTextIfExists(filePath, Encoding.UTF8) ?? string.Empty;
         var list = JsonConvert.DeserializeObject<List<MissingItem>>(json) ?? [];
 
         var dict = new Dictionary<string, MissingItem>(StringComparer.Ordinal);
@@ -456,19 +456,7 @@ public sealed class JsonTranslationService : ITranslationService, IDisposable
 
     private static void WriteAtomically(string filePath, string content)
     {
-        var directory = Path.GetDirectoryName(filePath)!;
-        Directory.CreateDirectory(directory);
-        var tmp = Path.Combine(directory, $"{Path.GetFileName(filePath)}.{Guid.NewGuid():N}.tmp");
-        File.WriteAllText(tmp, content, Encoding.UTF8);
-
-        if (File.Exists(filePath))
-        {
-            File.Replace(tmp, filePath, null);
-        }
-        else
-        {
-            File.Move(tmp, filePath);
-        }
+        UserFileService.WriteAllText(filePath, content, Encoding.UTF8);
     }
 
     private static bool IsChineseCulture(CultureInfo culture)
@@ -502,7 +490,7 @@ public sealed class JsonTranslationService : ITranslationService, IDisposable
 
     private static string GetI18nDirectory()
     {
-        return Global.Absolute(@"User\I18n");
+        return UserPathProvider.I18nRoot;
     }
 
     private static string GetMapFilePath(string cultureName)

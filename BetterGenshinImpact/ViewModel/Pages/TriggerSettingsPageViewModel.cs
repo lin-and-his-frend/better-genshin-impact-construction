@@ -64,12 +64,20 @@ public partial class TriggerSettingsPageViewModel : ViewModel
     private void OnEditBlacklist()
     {
         // 读取精确匹配黑名单
-        var exactPath = @"User\pick_black_lists.txt";
-        var exactText = Global.ReadAllTextIfExist(exactPath) ?? string.Empty;
+        var exactPath = UserPathProvider.PickExactBlacklistPath;
+        var exactText = UserFileService.ReadFirstAvailableText(
+            [
+                UserPathProvider.PickExactBlacklistPath,
+                UserPathProvider.LegacyPickExactBlacklistTextPath
+            ]) ?? string.Empty;
 
         // 读取模糊匹配黑名单
-        var fuzzyPath = @"User\pick_fuzzy_black_lists.txt";
-        var fuzzyText = Global.ReadAllTextIfExist(fuzzyPath) ?? string.Empty;
+        var fuzzyPath = UserPathProvider.PickFuzzyBlacklistPath;
+        var fuzzyText = UserFileService.ReadFirstAvailableText(
+            [
+                UserPathProvider.PickFuzzyBlacklistPath,
+                UserPathProvider.LegacyPickFuzzyBlacklistTextPath
+            ]) ?? string.Empty;
 
         // 创建精确匹配黑名单输入框
         var exactTextBox = new TextBox
@@ -140,8 +148,12 @@ public partial class TriggerSettingsPageViewModel : ViewModel
     [RelayCommand]
     private void OnEditWhitelist()
     {
-        var path = @"User\pick_white_lists.txt";
-        var text = Global.ReadAllTextIfExist(path);
+        var path = UserPathProvider.PickWhitelistPath;
+        var text = UserFileService.ReadFirstAvailableText(
+            [
+                UserPathProvider.PickWhitelistPath,
+                UserPathProvider.LegacyPickWhitelistTextPath
+            ]);
         if (string.IsNullOrEmpty(text))
         {
             text = "";

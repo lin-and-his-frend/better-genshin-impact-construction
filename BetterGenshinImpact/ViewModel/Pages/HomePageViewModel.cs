@@ -74,7 +74,7 @@ public partial class HomePageViewModel : ViewModel
     [ObservableProperty] private ImageSource _bannerImageSource;
 
     private const string DefaultBannerImagePath = "pack://application:,,,/Resources/Images/banner.jpg";
-    private readonly string _customBannerImagePath = Global.Absolute("User/Images/custom_banner.jpg");
+    private readonly string _customBannerImagePath = UserPathProvider.CustomBannerImagePath;
 
     public HomePageViewModel(IConfigService configService, TaskTriggerDispatcher taskTriggerDispatcher)
     {

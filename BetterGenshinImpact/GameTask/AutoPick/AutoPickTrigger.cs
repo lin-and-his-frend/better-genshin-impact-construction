@@ -72,18 +72,24 @@ public partial class AutoPickTrigger : ITaskTrigger
         if (config.BlackListEnabled)
         {
             _blackList = ReadJson(@"Assets\Config\Pick\default_pick_black_lists.json");
-            var userBlackList = ReadText(@"User\pick_black_lists.txt");
+            var userBlackList = ReadText(
+                UserPathProvider.PickExactBlacklistPath,
+                UserPathProvider.LegacyPickExactBlacklistTextPath);
             if (userBlackList.Count > 0)
             {
                 _blackList.UnionWith(userBlackList);
             }
 
-            _fuzzyBlackList = ReadTextList(@"User\pick_fuzzy_black_lists.txt");
+            _fuzzyBlackList = ReadTextList(
+                UserPathProvider.PickFuzzyBlacklistPath,
+                UserPathProvider.LegacyPickFuzzyBlacklistTextPath);
         }
 
         if (config.WhiteListEnabled)
         {
-            _whiteList = ReadText(@"User\pick_white_lists.txt");
+            _whiteList = ReadText(
+                UserPathProvider.PickWhitelistPath,
+                UserPathProvider.LegacyPickWhitelistTextPath);
         }
     }
 
@@ -106,11 +112,11 @@ public partial class AutoPickTrigger : ITaskTrigger
         return [];
     }
 
-    private HashSet<string> ReadText(string textFilePath)
+    private HashSet<string> ReadText(params string[] textFilePaths)
     {
         try
         {
-            var txt = Global.ReadAllTextIfExist(textFilePath);
+            var txt = UserFileService.ReadFirstAvailableText(textFilePaths);
             if (!string.IsNullOrEmpty(txt))
             {
                 // 明确指定使用 char[] 重载版本
@@ -126,11 +132,11 @@ public partial class AutoPickTrigger : ITaskTrigger
         return [];
     }
 
-    private List<string> ReadTextList(string textFilePath)
+    private List<string> ReadTextList(params string[] textFilePaths)
     {
         try
         {
-            var txt = Global.ReadAllTextIfExist(textFilePath);
+            var txt = UserFileService.ReadFirstAvailableText(textFilePaths);
             if (!string.IsNullOrEmpty(txt))
             {
                 // 明确指定使用 char[] 重载版本

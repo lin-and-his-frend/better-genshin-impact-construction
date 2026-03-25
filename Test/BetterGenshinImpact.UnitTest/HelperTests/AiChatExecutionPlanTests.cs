@@ -214,6 +214,82 @@ public class AiChatExecutionPlanTests
         Assert.Contains("hxxps://bettergi.com.evil.example/phish", sanitized);
     }
 
+    [Fact]
+    public void CoerceGeneralKnowledgeToolCalls_ShouldReplaceScriptSearch_WithWebSearch_ForCharacterTrainingQuestion()
+    {
+        var method = GetCoerceGeneralKnowledgeToolCallsMethod();
+        var intent = CreateIntentClassification();
+        var toolCalls = CreateToolCallList(("bgi.script.search", "{\"query\":\"练可莉ability.json\",\"limit\":10}"));
+        const string userText = "我想要练可莉需要什么";
+        object?[] args = [userText, toolCalls, intent, null];
+
+        var rewritten = method.Invoke(null, args);
+
+        Assert.NotNull(rewritten);
+        var summary = SummarizeToolCallList(rewritten!);
+        Assert.Contains("bgi.web.search", summary);
+        Assert.DoesNotContain("bgi.script.search", summary);
+        Assert.Contains("原神", summary);
+        Assert.Contains("可莉", summary);
+    }
+
+    [Fact]
+    public void DefaultSystemPrompt_ShouldPrioritizeWebSearch_ForCharacterTrainingQuestions()
+    {
+        var prompt = GetPrivateConstString("DefaultSystemPrompt");
+
+        Assert.Contains("角色培养、突破、天赋、武器、圣遗物、配队、材料需求时，优先调用 bgi.web.search", prompt);
+        Assert.Contains("这类请求不要调用 bgi.script.search", prompt);
+        Assert.Contains("我想要练可莉需要什么", prompt);
+    }
+
+    [Fact]
+    public void IntentClassifierPrompt_ShouldMarkCharacterMaterials_AsNonPathing()
+    {
+        var prompt = GetPrivateConstString("IntentClassifierPrompt");
+
+        Assert.Contains("角色知识 / 培养 / 突破 / 天赋 / 武器 / 圣遗物 / 配队 / 机制问答 -> pathingIntent=false", prompt);
+        Assert.Contains("材料", prompt);
+        Assert.Contains("角色培养", prompt);
+    }
+
+    [Fact]
+    public void NormalizeAutomatableMaterialQuery_ShouldKeepLocalSpecialty_AndCollapseEnemyDropFamily()
+    {
+        var method = GetStaticMethod("NormalizeAutomatableMaterialQuery", typeof(string));
+
+        var localSpecialty = method.Invoke(null, ["慕风蘑菇"]) as string;
+        var enemyDrop = method.Invoke(null, ["导能绘卷"]) as string;
+        var book = method.Invoke(null, ["「自由」的哲学"]) as string;
+
+        Assert.Equal("慕风蘑菇", localSpecialty);
+        Assert.Equal("绘卷", enemyDrop);
+        Assert.Null(book);
+    }
+
+    [Fact]
+    public void BuildCharacterAutomationSearchCalls_ShouldCreatePathingSearches_FromCharacterMaterials()
+    {
+        var method = GetBuildCharacterAutomationSearchCallsMethod();
+        var intent = CreateIntentClassification();
+        var executedCalls = CreateExecutedCallList((
+            "bgi.web.search",
+            "{\"query\":\"原神 可莉 培养材料\",\"maxResults\":3}",
+            """
+            {"provider":"honeyhunter_character_data","results":[{"materials":{"characterAscension":[{"name":"慕风蘑菇","quantity":168},{"name":"导能绘卷","quantity":18},{"name":"常燃火种","quantity":46}]}}]}
+            """,
+            false));
+
+        var result = method.Invoke(null, ["帮我准备可莉突破要用的东西，并直接运行能做的部分", intent, executedCalls]);
+
+        Assert.NotNull(result);
+        var summary = SummarizeToolCallList(result!);
+        Assert.Contains("bgi.script.search", summary);
+        Assert.Contains("慕风蘑菇", summary);
+        Assert.Contains("绘卷", summary);
+        Assert.DoesNotContain("常燃火种", summary);
+    }
+
     private static MethodInfo GetStaticMethod(string name, params Type[] parameterTypes)
     {
         var type = GetAiChatViewModelType();
@@ -222,6 +298,47 @@ public class AiChatExecutionPlanTests
             BindingFlags.NonPublic | BindingFlags.Static,
             binder: null,
             types: parameterTypes,
+            modifiers: null);
+        Assert.NotNull(method);
+        return method!;
+    }
+
+    private static string GetPrivateConstString(string name)
+    {
+        var field = GetAiChatViewModelType().GetField(name, BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(field);
+        var value = field!.GetRawConstantValue() as string;
+        Assert.NotNull(value);
+        return value!;
+    }
+
+    private static MethodInfo GetCoerceGeneralKnowledgeToolCallsMethod()
+    {
+        var type = GetAiChatViewModelType();
+        var intentType = GetNestedType("IntentClassification");
+        var toolCallType = GetNestedType("McpToolCall");
+        var listType = typeof(IReadOnlyList<>).MakeGenericType(toolCallType);
+        var method = type.GetMethod(
+            "CoerceGeneralKnowledgeToolCalls",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            types: [typeof(string), listType, intentType, typeof(string).MakeByRefType()],
+            modifiers: null);
+        Assert.NotNull(method);
+        return method!;
+    }
+
+    private static MethodInfo GetBuildCharacterAutomationSearchCallsMethod()
+    {
+        var type = GetAiChatViewModelType();
+        var intentType = GetNestedType("IntentClassification");
+        var executedType = GetNestedType("ExecutedMcpToolCall");
+        var listType = typeof(IReadOnlyList<>).MakeGenericType(executedType);
+        var method = type.GetMethod(
+            "BuildCharacterAutomationSearchCalls",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            types: [typeof(string), intentType, listType],
             modifiers: null);
         Assert.NotNull(method);
         return method!;
@@ -332,10 +449,56 @@ public class AiChatExecutionPlanTests
         return list!;
     }
 
+    private static object CreateExecutedCallList(params (string Name, string ArgumentsJson, string Content, bool IsError)[] items)
+    {
+        var executedType = GetNestedType("ExecutedMcpToolCall");
+        var resultType = typeof(BetterGenshinImpact.Model.Ai.McpToolCallResult);
+        var listType = typeof(List<>).MakeGenericType(executedType);
+        var addMethod = listType.GetMethod("Add");
+        Assert.NotNull(addMethod);
+
+        var list = Activator.CreateInstance(listType);
+        Assert.NotNull(list);
+
+        foreach (var item in items)
+        {
+            var toolResult = Activator.CreateInstance(resultType, item.IsError, item.Content, null);
+            Assert.NotNull(toolResult);
+            var executed = Activator.CreateInstance(
+                executedType,
+                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+                binder: null,
+                args: [item.Name, item.ArgumentsJson, toolResult],
+                culture: null);
+            Assert.NotNull(executed);
+            addMethod!.Invoke(list, [executed]);
+        }
+
+        return list!;
+    }
+
     private static Type GetNestedType(string name)
     {
         var type = GetAiChatViewModelType().GetNestedType(name, BindingFlags.NonPublic);
         Assert.NotNull(type);
         return type!;
+    }
+
+    private static string SummarizeToolCallList(object toolCallList)
+    {
+        var items = toolCallList as System.Collections.IEnumerable;
+        Assert.NotNull(items);
+
+        var parts = new List<string>();
+        foreach (var item in items!)
+        {
+            Assert.NotNull(item);
+            var type = item!.GetType();
+            var name = type.GetProperty("Name")?.GetValue(item) as string;
+            var argumentsJson = type.GetProperty("ArgumentsJson")?.GetValue(item) as string;
+            parts.Add($"{name}|{argumentsJson}");
+        }
+
+        return string.Join("\n", parts);
     }
 }

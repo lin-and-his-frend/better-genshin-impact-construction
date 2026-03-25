@@ -2,6 +2,7 @@
 using BetterGenshinImpact.View.Pages;
 using BetterGenshinImpact.ViewModel.Pages;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Linq;
 using System.Threading;

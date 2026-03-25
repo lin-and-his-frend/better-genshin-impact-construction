@@ -66,8 +66,8 @@ public partial class ScriptControlViewModel : ViewModel
     [ObservableProperty]
     private ScriptGroup? _selectedScriptGroup = null;
 
-    public readonly string ScriptGroupPath = Global.Absolute(@"User\ScriptGroup");
-    public readonly string LogPath = Global.Absolute(@"log");
+    public readonly string ScriptGroupPath = UserPathProvider.ScriptGroupRoot;
+    public readonly string LogPath = UserPathProvider.LogRoot;
 
 
     public override void OnNavigatedTo()
@@ -1536,7 +1536,7 @@ public partial class ScriptControlViewModel : ViewModel
 
     internal static List<ScriptProject> LoadAllJsScriptProjects()
     {
-        var path = Global.ScriptPath();
+        var path = UserPathProvider.JsScriptsRoot;
         Directory.CreateDirectory(path);
         // 获取所有脚本项目
         var projects = Directory.GetDirectories(path)
@@ -1559,7 +1559,7 @@ public partial class ScriptControlViewModel : ViewModel
 
     private List<FileInfo> LoadAllKmScripts()
     {
-        var folder = Global.Absolute(@"User\KeyMouseScript");
+        var folder = UserPathProvider.KeyMouseScriptsRoot;
         Directory.CreateDirectory(folder);
         // 获取所有脚本项目
         var files = Directory.GetFiles(folder, "*.*",
@@ -1743,10 +1743,10 @@ public partial class ScriptControlViewModel : ViewModel
             switch (item.Type)
             {
                 case "Javascript":
-                    path = Path.Combine(Global.ScriptPath(), item.FolderName);
+                    path = Path.Combine(UserPathProvider.JsScriptsRoot, item.FolderName);
                     break;
                 case "KeyMouse":
-                    path = Global.Absolute(@"User\KeyMouseScript");
+                    path = UserPathProvider.KeyMouseScriptsRoot;
                     break;
                 case "Pathing":
                     path = Path.Combine(MapPathingViewModel.PathJsonPath, item.FolderName);
@@ -1847,7 +1847,7 @@ public partial class ScriptControlViewModel : ViewModel
             }
 
             var file = Path.Combine(ScriptGroupPath, $"{scriptGroup.Name}.json");
-            File.WriteAllText(file, scriptGroup.ToJson());
+            UserFileService.WriteAllText(file, scriptGroup.ToJson());
         }
         catch (Exception e)
         {
@@ -1894,7 +1894,12 @@ public partial class ScriptControlViewModel : ViewModel
             {
                 try
                 {
-                    var json = File.ReadAllText(file);
+                    var json = UserFileService.ReadAllTextIfExists(file);
+                    if (string.IsNullOrWhiteSpace(json))
+                    {
+                        continue;
+                    }
+
                     var group = ScriptGroup.FromJson(json);
                     SetTaskContextNextFlag(group);
                     if (group.Name == TaskContext.Instance().Config.NextScriptGroupName)

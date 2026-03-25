@@ -1,5 +1,6 @@
 ﻿using BetterGenshinImpact.Core.Config;
 using BetterGenshinImpact.GameTask;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
@@ -10,18 +11,30 @@ public class AutoPickWhiteListViewModel : FormViewModel<string>
 {
     public AutoPickWhiteListViewModel()
     {
-        var blackListJson = Global.ReadAllTextIfExist(@"User\pick_white_lists.json");
-        if (!string.IsNullOrEmpty(blackListJson))
+        var whitelistText = UserFileService.ReadFirstAvailableText(
+            [
+                UserPathProvider.PickWhitelistPath,
+                UserPathProvider.LegacyPickWhitelistTextPath
+            ]);
+        if (!string.IsNullOrWhiteSpace(whitelistText))
         {
-            var blackList = JsonSerializer.Deserialize<List<string>>(blackListJson) ?? [];
-            AddRange(blackList);
+            var whiteList = whitelistText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).ToList();
+            AddRange(whiteList);
+            return;
+        }
+
+        var legacyWhiteListJson = UserFileService.ReadAllTextIfExists(UserPathProvider.LegacyPickWhitelistJsonPath);
+        if (!string.IsNullOrWhiteSpace(legacyWhiteListJson))
+        {
+            var whiteList = JsonSerializer.Deserialize<List<string>>(legacyWhiteListJson) ?? [];
+            AddRange(whiteList);
         }
     }
 
     public new void OnSave()
     {
-        var blackListJson = JsonSerializer.Serialize(List.ToList());
-        Global.WriteAllText(@"User\pick_white_lists.json", blackListJson);
+        var whiteListText = string.Join(Environment.NewLine, List);
+        UserFileService.WriteAllText(UserPathProvider.PickWhitelistPath, whiteListText);
         GameTaskManager.RefreshTriggerConfigs();
     }
 }

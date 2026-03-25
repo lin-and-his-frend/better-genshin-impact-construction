@@ -38,7 +38,7 @@ namespace BetterGenshinImpact.ViewModel.Pages;
 public partial class MapPathingViewModel : ViewModel
 {
     private readonly ILogger<MapPathingViewModel> _logger = App.GetLogger<MapPathingViewModel>();
-    public static readonly string PathJsonPath = Global.Absolute(@"User\AutoPathing");
+    public static readonly string PathJsonPath = UserPathProvider.PathingScriptsRoot;
 
     [ObservableProperty] private ObservableCollection<FileTreeNode<PathingTask>> _treeList = [];
 

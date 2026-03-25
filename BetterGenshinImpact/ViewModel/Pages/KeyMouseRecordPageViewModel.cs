@@ -24,7 +24,7 @@ namespace BetterGenshinImpact.ViewModel.Pages;
 public partial class KeyMouseRecordPageViewModel : ViewModel
 {
     private readonly ILogger<KeyMouseRecordPageViewModel> _logger = App.GetLogger<KeyMouseRecordPageViewModel>();
-    private readonly string scriptPath = Global.Absolute(@"User\KeyMouseScript");
+    private readonly string scriptPath = UserPathProvider.KeyMouseScriptsRoot;
 
     [ObservableProperty]
     private ObservableCollection<KeyMouseScriptItem> _scriptItems = [];
@@ -102,7 +102,7 @@ public partial class KeyMouseRecordPageViewModel : ViewModel
             {
                 var macro = GlobalKeyMouseRecord.Instance.StopRecord();
                 // Genshin Copilot Macro
-                File.WriteAllText(Path.Combine(scriptPath, $"BetterGI_GCM_{DateTime.Now:yyyyMMddHHmmssffff}.json"), macro);
+                UserFileService.WriteAllText(Path.Combine(scriptPath, $"BetterGI_GCM_{DateTime.Now:yyyyMMddHHmmssffff}.json"), macro);
                 // 刷新ListView
                 InitScriptListViewData();
                 IsRecording = false;

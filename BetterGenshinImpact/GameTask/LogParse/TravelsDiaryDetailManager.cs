@@ -38,7 +38,8 @@ public class TravelsDiaryDetailManager
         return involvedMonths.OrderBy(m => m.year).ThenBy(m => m.month).ToList();
     }
 
-    public static string basePath = Global.Absolute(@"log\logparse");
+    // 米游社原始札记数据属于远程缓存，不再放在日志目录下。
+    public static string basePath = UserPathProvider.LogParseCacheRoot;
 
     public static List<ActionItem> loadAllActionItems(GameInfo gameInfo, List<LogParse.ConfigGroupEntity> configGroups)
     {

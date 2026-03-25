@@ -28,15 +28,9 @@ public class Global
 
     public static string Absolute(string relativePath)
     {
-        if (IsUserPath(relativePath))
+        if (UserPathProvider.TryResolveVirtualPath(relativePath, out var managedPath))
         {
-            // 检查是否是脚本文件路径，如果是则直接返回 User 目录路径
-            if (IsScriptPath(relativePath))
-            {
-                return Path.Combine(UserDataRoot, GetRelativeUserPath(relativePath));
-            }
-
-            return UserCache.Absolute(relativePath);
+            return managedPath;
         }
 
         return Path.IsPathRooted(relativePath)
@@ -44,97 +38,15 @@ public class Global
             : Path.Combine(StartUpPath, relativePath);
     }
 
-    private static bool IsScriptPath(string path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return false;
-        }
-
-        // 标准化路径分隔符
-        var normalizedPath = path.Replace('/', '\\');
-
-        // 特定的配置文件也直接从磁盘读取
-        var directAccessFiles = new[]
-        {
-            "pick_black_lists.json",
-            "pick_white_lists.json",
-            "avatar_macro_default.json"
-        };
-
-        // 检查是否是特定的配置文件（直接匹配文件名）
-        foreach (var file in directAccessFiles)
-        {
-            if (normalizedPath.EndsWith("\\" + file, StringComparison.OrdinalIgnoreCase) ||
-                normalizedPath.Equals("User\\" + file, StringComparison.OrdinalIgnoreCase) ||
-                normalizedPath.Equals(file, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        // 脚本目录
-        var scriptDirs = new[]
-        {
-            "JsScript",
-            "KeyMouseScript",
-            "AutoFight",
-            "AutoGeniusInvokation",
-            "AutoPathing",
-            "ScriptGroup",
-            "Images"
-        };
-
-        // 检查是否在脚本目录中
-        foreach (var dir in scriptDirs)
-        {
-            if (normalizedPath.Contains("\\" + dir + "\\") ||
-                normalizedPath.StartsWith(dir + "\\", StringComparison.OrdinalIgnoreCase) ||
-                normalizedPath.StartsWith("User\\" + dir + "\\", StringComparison.OrdinalIgnoreCase) ||
-                normalizedPath.Equals("User\\" + dir, StringComparison.OrdinalIgnoreCase) ||
-                normalizedPath.Equals(dir, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static string GetRelativeUserPath(string path)
-    {
-        var trimmed = path.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        if (trimmed.StartsWith("User" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
-            trimmed.StartsWith("User/", StringComparison.OrdinalIgnoreCase))
-        {
-            return trimmed.Substring(5);
-        }
-        return trimmed;
-    }
-
     public static string ScriptPath()
     {
-        return Absolute("User\\JsScript");
+        return UserPathProvider.JsScriptsRoot;
     }
 
     public static string? ReadAllTextIfExist(string relativePath)
     {
-        if (IsUserPath(relativePath))
-        {
-            // 脚本文件直接从磁盘读取
-            if (IsScriptPath(relativePath))
-            {
-                var fullPath = Path.Combine(UserDataRoot, GetRelativeUserPath(relativePath));
-                return File.Exists(fullPath) ? File.ReadAllText(fullPath) : null;
-            }
-
-            return UserCache.ReadTextIfExist(relativePath);
-        }
-
-        var fullPath2 = Path.IsPathRooted(relativePath)
-            ? Path.GetFullPath(relativePath)
-            : Path.Combine(StartUpPath, relativePath);
-        return File.Exists(fullPath2) ? File.ReadAllText(fullPath2) : null;
+        var fullPath = Absolute(relativePath);
+        return UserFileService.ReadAllTextIfExists(fullPath);
     }
 
     /// <summary>
@@ -175,147 +87,52 @@ public class Global
 
     public static void WriteAllText(string relativePath, string content)
     {
-        if (IsUserPath(relativePath))
-        {
-            // 脚本文件直接写入磁盘
-            if (IsScriptPath(relativePath))
-            {
-                var fullPath = Path.Combine(UserDataRoot, GetRelativeUserPath(relativePath));
-                var directory = Path.GetDirectoryName(fullPath);
-                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-                {
-                    Directory.CreateDirectory(directory);
-                }
-                File.WriteAllText(fullPath, content);
-                return;
-            }
-
-            UserCache.WriteText(relativePath, content);
-            return;
-        }
-
-        var fullPath2 = Path.IsPathRooted(relativePath)
-            ? Path.GetFullPath(relativePath)
-            : Path.Combine(StartUpPath, relativePath);
-        var directory2 = Path.GetDirectoryName(fullPath2);
-        if (!string.IsNullOrEmpty(directory2) && !Directory.Exists(directory2))
-        {
-            Directory.CreateDirectory(directory2);
-        }
-
-        File.WriteAllText(fullPath2, content);
+        var fullPath = Absolute(relativePath);
+        UserFileService.WriteAllText(fullPath, content);
     }
 
     public static byte[]? ReadAllBytesIfExist(string relativePath)
     {
-        if (IsUserPath(relativePath))
-        {
-            // 脚本文件直接从磁盘读取
-            if (IsScriptPath(relativePath))
-            {
-                var fullPath = Path.Combine(UserDataRoot, GetRelativeUserPath(relativePath));
-                return File.Exists(fullPath) ? File.ReadAllBytes(fullPath) : null;
-            }
-
-            return UserCache.ReadBytesIfExist(relativePath);
-        }
-
-        var fullPath2 = Path.IsPathRooted(relativePath)
-            ? Path.GetFullPath(relativePath)
-            : Path.Combine(StartUpPath, relativePath);
-        return File.Exists(fullPath2) ? File.ReadAllBytes(fullPath2) : null;
+        var fullPath = Absolute(relativePath);
+        return UserFileService.ReadAllBytesIfExists(fullPath);
     }
 
     public static void WriteAllBytes(string relativePath, byte[] content, bool isText = false)
     {
-        if (IsUserPath(relativePath))
-        {
-            // 脚本文件直接写入磁盘
-            if (IsScriptPath(relativePath))
-            {
-                var fullPath = Path.Combine(UserDataRoot, GetRelativeUserPath(relativePath));
-                var directory = Path.GetDirectoryName(fullPath);
-                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-                {
-                    Directory.CreateDirectory(directory);
-                }
-                File.WriteAllBytes(fullPath, content);
-                return;
-            }
-
-            UserCache.WriteBytes(relativePath, content, isText);
-            return;
-        }
-
-        var fullPath2 = Path.IsPathRooted(relativePath)
-            ? Path.GetFullPath(relativePath)
-            : Path.Combine(StartUpPath, relativePath);
-        var directory2 = Path.GetDirectoryName(fullPath2);
-        if (!string.IsNullOrEmpty(directory2) && !Directory.Exists(directory2))
-        {
-            Directory.CreateDirectory(directory2);
-        }
-
-        File.WriteAllBytes(fullPath2, content);
+        var fullPath = Absolute(relativePath);
+        UserFileService.WriteAllBytes(fullPath, content);
     }
 
     public static bool DeleteUserPath(string relativePath)
     {
-        if (!IsUserPath(relativePath))
+        if (!UserPathProvider.TryResolveManagedPath(relativePath, out var fullPath))
         {
             return false;
         }
 
-        // 脚本文件直接从磁盘删除
-        if (IsScriptPath(relativePath))
+        try
         {
-            try
+            if (File.Exists(fullPath))
             {
-                var fullPath = Path.Combine(UserDataRoot, GetRelativeUserPath(relativePath));
-                if (File.Exists(fullPath))
-                {
-                    File.Delete(fullPath);
-                }
-                return true;
+                File.Delete(fullPath);
             }
-            catch
-            {
-                return false;
-            }
-        }
 
-        return UserCache.Delete(relativePath);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public static string AbsoluteUserData(string relativePath)
     {
+        if (UserPathProvider.TryResolveManagedPath(Path.Combine("User", relativePath), out var fullPath))
+        {
+            return fullPath;
+        }
+
         return Path.Combine(UserDataRoot, relativePath);
     }
 
-    private static bool IsUserPath(string path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return false;
-        }
-
-        if (Path.IsPathRooted(path))
-        {
-            return UserStorage.TryNormalizeUserPath(path, out _);
-        }
-
-        var trimmed = path.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        if (!trimmed.StartsWith($"User{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase) &&
-            !trimmed.StartsWith("User/", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        if (UserStorage.TryNormalizeUserPath(trimmed, out _))
-        {
-            return true;
-        }
-
-        return false;
-    }
 }

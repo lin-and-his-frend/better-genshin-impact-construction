@@ -86,8 +86,7 @@ public partial class OneDragonFlowViewModel : ViewModel
             new() {Name = "领取尘歌壶奖励" },
         };
 
-    private readonly string _scriptGroupPath = Global.Absolute(@"User\ScriptGroup");
-    private readonly string _basePath = AppDomain.CurrentDomain.BaseDirectory;
+    private readonly string _scriptGroupPath = UserPathProvider.ScriptGroupRoot;
     
     private void ReadScriptGroup()
     {
@@ -109,7 +108,12 @@ public partial class OneDragonFlowViewModel : ViewModel
             {
                 try
                 {
-                    var json = File.ReadAllText(file);
+                    var json = UserFileService.ReadAllTextIfExists(file);
+                    if (string.IsNullOrWhiteSpace(json))
+                    {
+                        continue;
+                    }
+
                     var group = ScriptGroup.FromJson(json);
 
                     var nst = TaskContext.Instance().Config.NextScheduledTask.Find(item => item.Item1 == group.Name);
@@ -675,8 +679,14 @@ public partial class OneDragonFlowViewModel : ViewModel
                         {
                             _logger.LogInformation($"配置组任务执行: {finishTaskcount++}/{enabledTaskCount}");
                             await Task.Delay(500);
-                            string filePath = Path.Combine(_basePath, _scriptGroupPath, $"{task.Name}.json");
-                            var group = ScriptGroup.FromJson(await File.ReadAllTextAsync(filePath));
+                            string filePath = Path.Combine(_scriptGroupPath, $"{task.Name}.json");
+                            var json = UserFileService.ReadAllTextIfExists(filePath);
+                            if (string.IsNullOrWhiteSpace(json))
+                            {
+                                throw new FileNotFoundException("未找到配置组文件", filePath);
+                            }
+
+                            var group = ScriptGroup.FromJson(json);
                             IScriptService? scriptService = App.GetService<IScriptService>();
                             await scriptService!.RunMulti(ScriptControlViewModel.GetNextProjects(group), group.Name);
                             await Task.Delay(1000);

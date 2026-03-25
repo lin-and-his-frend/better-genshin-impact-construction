@@ -4752,7 +4752,9 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             return Task.FromResult<object>(new { ok = false, error });
         }
 
-        StartBackgroundTask(() => new TaskRunner().RunSoloTaskAsync(new AutoStygianOnslaughtTask(config, path)));
+        var param = new AutoStygianOnslaughtParam();
+        param.SetAutoStygianOnslaughtConfig(config);
+        StartBackgroundTask(() => new TaskRunner().RunSoloTaskAsync(new AutoStygianOnslaughtTask(param, path)));
         return Task.FromResult<object>(new { ok = true });
     }
 

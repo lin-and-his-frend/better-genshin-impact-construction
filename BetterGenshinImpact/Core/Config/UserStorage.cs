@@ -268,118 +268,25 @@ internal static class UserStorage
 
     public static bool TryReadMainConfig(out string? content)
     {
-        content = null;
-        Initialize();
-        Lock.EnterReadLock();
-        try
-        {
-            using var connection = OpenConnection();
-            string? rawMainJson = null;
-            if (TryReadRawMainConfigInternal(connection, out var mainJson, out _))
-            {
-                rawMainJson = mainJson;
-            }
-
-            if (TryReadSplitConfigAsMainInternal(connection, out var splitJson))
-            {
-                if (!string.IsNullOrWhiteSpace(rawMainJson) &&
-                    !string.IsNullOrWhiteSpace(splitJson) &&
-                    TryMergeJsonObjects(rawMainJson, splitJson, out var merged))
-                {
-                    content = merged;
-                    return true;
-                }
-
-                content = splitJson;
-                return !string.IsNullOrWhiteSpace(content);
-            }
-
-            content = rawMainJson;
-            return !string.IsNullOrWhiteSpace(content);
-        }
-        catch
-        {
-            return false;
-        }
-        finally
-        {
-            Lock.ExitReadLock();
-        }
+        // Main configuration now uses the direct-write v2 settings store.
+        // Keep this adapter method so legacy callers can keep using the old API
+        // without reintroducing the old dual-write schema.
+        return AppConfigStore.TryReadJson(out content);
     }
 
     public static bool TryWriteMainConfig(string content, DateTimeOffset? updatedUtc = null)
     {
-        Initialize();
-        Lock.EnterWriteLock();
-        try
-        {
-            using var connection = OpenConnection();
-            UpsertMainConfig(connection, content, updatedUtc);
-            UpsertSplitSectionsFromMainJson(connection, content, updatedUtc);
-            SetMeta(connection, MigratedSplitConfigMetaKey, "1");
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-        finally
-        {
-            Lock.ExitWriteLock();
-        }
+        return AppConfigStore.TryWriteJson(content, updatedUtc);
     }
 
     public static bool MainConfigExists()
     {
-        Initialize();
-        Lock.EnterReadLock();
-        try
-        {
-            using var connection = OpenConnection();
-            return SplitConfigExistsInternal(connection) || MainConfigExistsInternal(connection);
-        }
-        catch
-        {
-            return false;
-        }
-        finally
-        {
-            Lock.ExitReadLock();
-        }
+        return AppConfigStore.Exists();
     }
 
     public static DateTimeOffset? GetMainConfigUpdatedUtc()
     {
-        Initialize();
-        Lock.EnterReadLock();
-        try
-        {
-            using var connection = OpenConnection();
-            DateTimeOffset? latest = GetSplitConfigLatestUpdatedUtcInternal(connection);
-            using var command = connection.CreateCommand();
-            command.CommandText = $"SELECT {AppConfigUpdatedColumn} FROM {AppConfigTable} WHERE {AppConfigKeyColumn} = $key;";
-            command.Parameters.AddWithValue("$key", MainConfigKey);
-            var mainUpdated = TryParseDateTimeOffset(command.ExecuteScalar()?.ToString());
-            if (mainUpdated == null)
-            {
-                return latest;
-            }
-
-            if (latest == null || mainUpdated > latest)
-            {
-                return mainUpdated;
-            }
-
-            return latest;
-        }
-        catch
-        {
-            return null;
-        }
-        finally
-        {
-            Lock.ExitReadLock();
-        }
+        return AppConfigStore.GetLatestUpdatedUtc();
     }
 
     public static bool TryReadConfigSection(ConfigSection section, out string? content)

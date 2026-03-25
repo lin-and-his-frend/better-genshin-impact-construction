@@ -62,11 +62,11 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
     /// </summary>
     public Task? CommandLineAutoUpdateTask { get; set; }
 
-    // 仓储位置
-    public static readonly string ReposPath = Global.Absolute("Repos");
+    // 仓储缓存位置。仓库克隆、repo.json 快照等都属于可重建缓存，不再写安装目录。
+    public static readonly string ReposPath = UserPathProvider.ScriptRepoRepositoriesRoot;
 
-    // 仓储临时目录 用于下载与解压
-    public static readonly string ReposTempPath = Path.Combine(ReposPath, "Temp");
+    // 仓储临时目录，用于下载与解压。
+    public static readonly string ReposTempPath = UserPathProvider.ScriptRepoTempRoot;
 
     // // 中央仓库信息地址
     // public static readonly List<string> CenterRepoInfoUrls =
@@ -104,10 +104,10 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
 
     public static readonly Dictionary<string, string> PathMapper = new Dictionary<string, string>
     {
-        { "pathing", Global.Absolute("User\\AutoPathing") },
-        { "js", Global.Absolute("User\\JsScript") },
-        { "combat", Global.Absolute("User\\AutoFight") },
-        { "tcg", Global.Absolute("User\\AutoGeniusInvokation") },
+        { "pathing", UserPathProvider.PathingScriptsRoot },
+        { "js", UserPathProvider.JsScriptsRoot },
+        { "combat", UserPathProvider.CombatScriptsRoot },
+        { "tcg", UserPathProvider.TcgScriptsRoot },
     };
 
     private WebpageWindow? _webWindow;
@@ -638,7 +638,7 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
     }
 
     // URL → 文件夹名 映射文件路径
-    private static readonly string FolderMappingPath = Path.Combine(ReposPath, "repo_folder_mapping.json");
+    private static readonly string FolderMappingPath = UserPathProvider.ScriptRepoFolderMappingPath;
 
     /// <summary>
     /// 缓存的 URL→文件夹名 映射，避免每次访问 CenterRepoPath 都读磁盘
@@ -653,9 +653,9 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
     {
         try
         {
-            if (File.Exists(FolderMappingPath))
+            var json = UserFileService.ReadAllTextIfExists(FolderMappingPath);
+            if (!string.IsNullOrWhiteSpace(json))
             {
-                var json = File.ReadAllText(FolderMappingPath);
                 return Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, string>>(json);
             }
         }
@@ -697,7 +697,7 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
                 mapping[url.TrimEnd('/')] = folderName;
                 // 先写磁盘，成功后再更新缓存，确保一致性
                 var jsonOut = Newtonsoft.Json.JsonConvert.SerializeObject(mapping, Newtonsoft.Json.Formatting.Indented);
-                File.WriteAllText(FolderMappingPath, jsonOut);
+                UserFileService.WriteAllText(FolderMappingPath, jsonOut);
                 _folderMappingCache = mapping;
             }
         }
@@ -739,7 +739,7 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
                 if (!mapping.Remove(trimmed)) return;
 
                 var jsonOut = Newtonsoft.Json.JsonConvert.SerializeObject(mapping, Newtonsoft.Json.Formatting.Indented);
-                File.WriteAllText(FolderMappingPath, jsonOut);
+                UserFileService.WriteAllText(FolderMappingPath, jsonOut);
                 _folderMappingCache = mapping;
             }
         }
@@ -2407,12 +2407,13 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
     }
 
     // ========== 文件级订阅路径存储 ==========
-    // 订阅数据存储在 User/subscriptions/{repoFolderName}.json，与仓库目录和主配置解耦
+    // 当前订阅关系仍保留文件化，目录已收敛到 User\Settings\ScriptRepo\Subscriptions。
+    // 后续若订阅元数据完全入库，只需要替换这一层文件读写即可。
 
     /// <summary>
     /// 订阅文件存储目录
     /// </summary>
-    public static readonly string SubscriptionsPath = Global.Absolute(@"User\Subscriptions");
+    public static readonly string SubscriptionsPath = UserPathProvider.ScriptRepoSubscriptionsRoot;
 
     /// <summary>
     /// 获取当前活跃仓库的文件夹名称
@@ -2490,10 +2491,7 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
         _subscriptionRwLock.EnterReadLock();
         try
         {
-            if (!File.Exists(filePath))
-                return new List<string>();
-
-            var json = File.ReadAllText(filePath);
+            var json = UserFileService.ReadAllTextIfExists(filePath);
             if (string.IsNullOrWhiteSpace(json))
                 return new List<string>();
 
@@ -2518,19 +2516,17 @@ public class ScriptRepoUpdater : Singleton<ScriptRepoUpdater>
         _subscriptionRwLock.EnterWriteLock();
         try
         {
-            if (!Directory.Exists(SubscriptionsPath))
-                Directory.CreateDirectory(SubscriptionsPath);
+            Directory.CreateDirectory(SubscriptionsPath);
 
             if (paths.Count == 0)
             {
                 // 空列表时删除文件
-                if (File.Exists(filePath))
-                    File.Delete(filePath);
+                UserFileService.DeleteFileIfExists(filePath);
                 return;
             }
 
             var json = System.Text.Json.JsonSerializer.Serialize(paths, ConfigService.JsonOptions);
-            File.WriteAllText(filePath, json);
+            UserFileService.WriteAllText(filePath, json);
         }
         catch (Exception ex)
         {

@@ -67,9 +67,9 @@ public partial class App : Application
                 services.AddSingleton<IConfigService>(sp => configService);
                 var all = configService.Get();
 
-                var logFolder = Path.Combine(AppContext.BaseDirectory, "log");
+                var logFolder = UserPathProvider.AppLogRoot;
                 Directory.CreateDirectory(logFolder);
-                var logFile = Path.Combine(logFolder, "better-genshin-impact.log");
+                var logFile = UserPathProvider.AppLogFilePath;
 
                 var richTextBox = new RichTextBoxImpl();
                 services.AddSingleton<IRichTextBox>(richTextBox);
@@ -538,9 +538,9 @@ public partial class App : Application
                 {
                     MessageBox.Show(
                         "配置文件已成功迁移到数据库！\n\n" +
-                        "• 所有配置现在存储在 User/config.db 中\n" +
-                        "• 脚本文件仍保存在原有路径，方便管理\n" +
-                        "• 数据库提供更好的性能和可靠性",
+                        "• 结构化应用配置现在存储在 User/config.db 中\n" +
+                        "• 脚本、工作流、规则和资源文件仍保存在 User 目录中\n" +
+                        "• 数据库与文件资产现在有更清晰的边界，便于维护和迁移",
                         "BetterGI - 配置迁移完成",
                         MessageBoxButton.OK,
                         MessageBoxImage.Information);

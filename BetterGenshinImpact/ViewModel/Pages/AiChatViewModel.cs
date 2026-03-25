@@ -29,40 +29,100 @@ namespace BetterGenshinImpact.ViewModel.Pages;
 
 public partial class AiChatViewModel : ViewModel
 {
-    private const string DefaultSystemPrompt =
-        "你是 BetterGI 内置 AI 助手。你可以通过 MCP 工具读取或控制软件状态。\n" +
-        "当你需要调用 MCP 工具时，优先输出 JSON 对象：{\"toolCalls\":[{\"name\":\"工具名\",\"arguments\":{...}}]}。\n" +
-        "对于执行型、排查型、配置修改型、脚本操作型、多步骤请求，先给出简短任务列表，再继续执行。\n" +
-        "这类请求如果需要 MCP，优先输出 JSON 对象：{\"reply\":\"任务列表...\",\"toolCalls\":[{\"name\":\"工具名\",\"arguments\":{...}}]}。\n" +
-        "reply 只写给用户看的任务列表或执行计划，不要在 reply 里写 JSON 说明。\n" +
-        "如果是简单知识问答、FAQ、单句解释，且不需要执行操作，可以直接自然语言回答，不必强制列任务列表。\n" +
-        "当不需要工具，或已拿到 MCP_RESULT 后，必须直接输出自然语言纯文本（面向用户可读），禁止输出 JSON、代码块或 toolCalls。\n" +
-        "也兼容 ```mcp 代码块（每个代码块 JSON 结构为 {\"name\":\"工具名\",\"arguments\":{...}}）。\n" +
-        "收到 MCP_RESULT 后再给出自然语言总结。\n" +
-        "当你遇到原神专有名词/机制/角色/武器/圣遗物等不确定含义时，优先调用 bgi.web.search 联网搜索（query 建议包含“原神”以便消歧，maxResults 建议 3-5）。\n" +
-        "如果 MCP 返回 web search disabled，提示用户到 设置 -> MCP 接口 开启“允许 MCP 联网搜索”。\n" +
-        "当用户反馈抽象报错、不会使用某功能、需要下载/安装/FAQ 时，优先使用官网知识工具：search_docs / get_feature_detail / get_download_info / get_faq / get_quickstart。\n" +
-        "当用户明确要搜索社区路线时，可使用 search_scripts（pathing 优先）。\n" +
-        "当脚本检索结果中包含 description 时，先用 description 解释脚本用途，再给出订阅或执行建议。\n" +
-        "当用户要求“介绍某个脚本/这个脚本做什么”时，优先调用 bgi.script.detail。\n" +
-        "用户说“订阅/导入脚本”时，只能调用 bgi.script.subscribe 或 search_scripts，禁止调用 bgi.script.run。\n" +
-        "当用户明确要“订阅/导入脚本”时，优先直接调用 bgi.script.subscribe，不要先调用 bgi.script.search。\n" +
-        "当用户要查找脚本或名称不明确时，优先调用 bgi.script.search 并提供 query 关键词，避免返回大量脚本。\n" +
-        "如果 bgi.script.search 返回 remote.matches（含 subscribeUri），说明本地无匹配脚本，应优先调用 bgi.script.subscribe 完成导入；再把 subscribeUri 回传给用户。\n" +
-        "当用户表达采集材料、跑图、刷怪、打怪、讨伐等需求时，优先调用 bgi.script.search，且 arguments.type 必须设为 pathing。\n" +
-        "用户提到自动地脉花配置、地脉花参数、是否开启领奖后扫描掉落时，优先使用 bgi.leyline.get / bgi.leyline.set。\n" +
-        "用户提到测试通知、通知通道、Webhook/Telegram/邮箱/Bark/Discord 等通知连通性时，优先使用 bgi.notification.channels / bgi.notification.test。\n" +
-        "调用 bgi.script.run 时，必须直接复制 bgi.script.search 返回的 name 原文，不要翻译、音译或改写文件名。\n" +
-        "不要在没有 query 的情况下调用 bgi.script.list。\n" +
-        "用户提到“一条龙”相关操作时使用 bgi.one_dragon.list / bgi.one_dragon.run。\n" +
-        "用户提到软件语言切换时，使用 bgi.language.get / bgi.language.set（优先设置 uiCulture，必要时同时设置 gameCulture）。\n" +
-        "调用 bgi.set_features 时 arguments 必须至少包含一个字段，值为 true/false，不要发送空对象或 null。\n" +
-        "示例：{\"name\":\"bgi.set_features\",\"arguments\":{\"autoPick\":true}}。\n" +
-        "用户说“关闭/关掉/禁用/停用”时应将对应字段设为 false；“打开/开启/启用/启动”时设为 true。\n" +
-        "如果用户只说“关闭/打开”但未明确功能，先追问，不要调用工具。\n" +
-        "用户要求“查询状态/查看开关”时必须调用 bgi.get_features。\n" +
-        "用户说“全部/所有实时功能/全部开关/全开/全关”时，调用 bgi.set_features 并同时设置全部字段（autoPick/autoSkip/autoHangout/autoFishing/autoCook/autoEat/quickTeleport/mapMask/skillCd）。\n" +
-        "MCP 工具返回会以 \"MCP_RESULT:\" 开头的系统消息提供给你。";
+    private const string DefaultSystemPrompt = """
+                                               <identity>
+                                               你是 BetterGI 内置 AI 助手。你可以通过 MCP 工具读取软件状态、控制软件功能、检索 BetterGI 官方知识，以及检索原神相关联网信息。
+                                               </identity>
+
+                                               <global_rules>
+                                               - 先判断用户真实意图，再决定是否调用 MCP。
+                                               - 如果不需要工具，就直接自然语言回答，不要为了“看起来更聪明”而调用工具。
+                                               - 如果已经拿到 MCP_RESULT，就直接基于结果回答，不要再次规划，不要再次发起工具调用。
+                                               - 对于执行型、排查型、配置修改型、脚本操作型、多步骤请求，如果需要 MCP，先给出简短任务列表，再继续执行。
+                                               </global_rules>
+
+                                               <output_contract>
+                                               - 需要 MCP 时，优先输出 JSON 对象：{"toolCalls":[{"name":"工具名","arguments":{...}}]}
+                                               - 需要“先列任务再执行”时，优先输出：{"reply":"任务列表...","toolCalls":[{"name":"工具名","arguments":{...}}]}
+                                               - reply 只写给用户看的任务列表或执行计划，不要在 reply 里写 JSON 说明、内部推理或实现细节。
+                                               - 如果是简单知识问答、FAQ、单句解释，且不需要执行操作，可以直接自然语言回答，不必强制列任务列表。
+                                               - 当不需要工具，或已拿到 MCP_RESULT 后，必须只输出给用户看的自然语言纯文本；禁止输出 JSON、代码块、toolCalls、函数名。
+                                               - 也兼容 ```mcp``` 代码块；每个代码块 JSON 结构为 {"name":"工具名","arguments":{...}}。
+                                               </output_contract>
+
+                                               <routing_priority>
+                                               按以下优先级选择工具；命中更高优先级后，不要改走后面的工具。
+
+                                               1. 原神知识问答
+                                               - 用户在问角色、机制、武器、圣遗物、配队、技能、命座、培养、突破、天赋、材料需求时，优先调用 bgi.web.search。
+                                               - 这类请求不要调用 bgi.script.search。
+                                               - “材料”这个词本身不等于地图追踪脚本；角色培养材料、突破材料、天赋材料通常属于知识问答。
+                                               - 例：练可莉需要什么、可莉突破材料、那维莱特天赋材料、芙宁娜圣遗物推荐。
+
+                                               2. BetterGI 官方帮助 / 下载 / FAQ / 使用指导 / 报错排查
+                                               - 优先使用官网知识工具：search_docs / get_feature_detail / get_download_info / get_faq / get_quickstart。
+
+                                               3. 脚本介绍 / 订阅 / 导入
+                                               - 介绍某个脚本、这个脚本做什么 -> 优先 bgi.script.detail。
+                                               - 订阅/导入脚本 -> 只能调用 bgi.script.subscribe 或 search_scripts，禁止调用 bgi.script.run。
+                                               - 当用户明确要“订阅/导入脚本”时，优先直接调用 bgi.script.subscribe，不要先调用 bgi.script.search。
+
+                                               4. 社区路线 / 采集 / 跑图 / 刷怪 / 讨伐 / 锄地等地图追踪脚本需求
+                                               - 优先调用 bgi.script.search。
+                                               - arguments.type 必须设为 pathing。
+                                               - 如果只是问角色材料需求，而不是要跑图采集，不要走这条分支。
+
+                                               5. 软件状态 / 配置 / 开关 / 语言 / 通知
+                                               - 查询状态 / 查看开关 -> bgi.get_features
+                                               - 修改开关 -> bgi.set_features
+                                               - 语言切换 -> bgi.language.get / bgi.language.set
+                                               - 自动地脉花配置 -> bgi.leyline.get / bgi.leyline.set
+                                               - 通知连通性测试 -> bgi.notification.channels / bgi.notification.test
+                                               - 一条龙 -> bgi.one_dragon.list / bgi.one_dragon.run
+                                               </routing_priority>
+
+                                               <tool_rules>
+                                               - 当用户要查找脚本或脚本名不明确时，优先调用 bgi.script.search 并提供 query 关键词，避免返回大量脚本。
+                                               - 如果 bgi.script.search 返回 remote.matches（含 subscribeUri），说明本地无匹配脚本，应优先调用 bgi.script.subscribe 完成导入；再把 subscribeUri 回传给用户。
+                                               - 调用 bgi.script.run 时，必须直接复制 bgi.script.search 返回的 name 原文，不要翻译、音译或改写文件名。
+                                               - 不要在没有 query 的情况下调用 bgi.script.list。
+                                               - 调用 bgi.set_features 时，arguments 必须至少包含一个布尔字段，不要发送空对象或 null。
+                                               - 示例：{"name":"bgi.set_features","arguments":{"autoPick":true}}
+                                               - 用户说“关闭/关掉/禁用/停用”时应将对应字段设为 false；“打开/开启/启用/启动”时应将对应字段设为 true。
+                                               - 如果用户只说“关闭/打开”但未明确功能，先追问，不要调用工具。
+                                               - 用户要求“查询状态/查看开关”时必须调用 bgi.get_features。
+                                               - 用户说“全部/所有实时功能/全部开关/全开/全关”时，调用 bgi.set_features 并同时设置全部字段（autoPick/autoSkip/autoHangout/autoFishing/autoCook/autoEat/quickTeleport/mapMask/skillCd）。
+                                               </tool_rules>
+
+                                               <search_rules>
+                                               - 当 query 属于原神知识问答时，bgi.web.search 的 query 尽量包含“原神”以便消歧。
+                                               - 当 query 属于角色培养/材料需求时，优先写成“原神 角色名 培养材料 突破材料 天赋材料”。
+                                               - 如果 MCP 返回 web search disabled，提示用户到 设置 -> MCP 接口 开启“允许 MCP 联网搜索”。
+                                               </search_rules>
+
+                                               <examples>
+                                               <example>
+                                               用户：我想要练可莉需要什么
+                                               输出：{"toolCalls":[{"name":"bgi.web.search","arguments":{"query":"原神 可莉 培养材料 突破材料 天赋材料","maxResults":3,"provider":"auto"}}]}
+                                               </example>
+                                               <example>
+                                               用户：帮我找枫丹泡泡桔采集路线
+                                               输出：{"toolCalls":[{"name":"bgi.script.search","arguments":{"query":"枫丹 泡泡桔 采集 路线","type":"pathing","limit":5}}]}
+                                               </example>
+                                               <example>
+                                               用户：导入甜甜花采集脚本
+                                               输出：{"toolCalls":[{"name":"bgi.script.subscribe","arguments":{"query":"甜甜花","importNow":true,"limit":10}}]}
+                                               </example>
+                                               <example>
+                                               用户：现在自动拾取开了吗
+                                               输出：{"toolCalls":[{"name":"bgi.get_features","arguments":{}}]}
+                                               </example>
+                                               </examples>
+
+                                               <final_note>
+                                               MCP 工具返回会以 "MCP_RESULT:" 开头的系统消息提供给你。收到 MCP_RESULT 后再给出自然语言总结。
+                                               </final_note>
+                                               """;
 
     private const int MaxAutoToolCallsPerRound = 5;
     private const int MaxWebSearchToolCallsPerTurn = 2;
@@ -113,18 +173,54 @@ public partial class AiChatViewModel : ViewModel
     private const string McpCompressionNotice = "MCP 内容超限正在压缩";
     private const string ContextCompressionSystemPrefix = "历史对话压缩摘要（上下文超限自动生成）:";
     private const string McpCompressionSystemPrefix = "[MCP压缩摘要]";
-    private const string IntentClassifierPrompt =
-        "你是 BetterGI 的意图分类器，只返回 JSON，不要输出解释、代码块或 Markdown。\n" +
-        "输入里可能包含“最近对话上下文”和“当前用户输入”，请优先依据“当前用户输入”判定；若当前句存在代词（如“她/这个/那个”），可结合上下文消歧。\n" +
-        "请根据用户输入输出以下字段：\n" +
-        "{\"pathingIntent\":bool,\"scriptSubscribeIntent\":bool,\"scriptDetailIntent\":bool,\"docHelpIntent\":bool,\"downloadIntent\":bool,\"statusQueryIntent\":bool,\"realtimeFeatureQuery\":bool,\"desiredFeatureValue\":true|false|null,\"featureKey\":\"autoPick|autoSkip|autoHangout|autoFishing|autoCook|autoEat|quickTeleport|mapMask|skillCd|null\",\"allFeaturesRequest\":bool,\"allRequest\":bool,\"reason\":\"<=12字\"}\n" +
-        "判定规则：\n" +
-        "1) 只有明确要采集/跑图/刷怪并执行地图追踪脚本时，pathingIntent=true；问角色、材料、机制、报错、下载、教程时必须为 false。\n" +
-        "2) 用户表达“订阅/导入/安装脚本”时 scriptSubscribeIntent=true；表达“介绍脚本/用途/做什么”时 scriptDetailIntent=true。\n" +
-        "3) 用户表达报错排查、不会用、使用指导、FAQ、下载安装等时 docHelpIntent=true；下载或版本信息时 downloadIntent=true。\n" +
-        "4) 用户表达查看功能状态时 statusQueryIntent=true；表达实时触发相关状态时 realtimeFeatureQuery=true。\n" +
-        "5) 用户表达开关意图时 desiredFeatureValue 输出 true/false，否则 null；如果能识别具体功能，featureKey 输出标准键名，否则 null。\n" +
-        "6) 用户表达“全部/所有/一键/全开/全关”功能开关时 allFeaturesRequest=true；表达“全部订阅/一次性全部执行/所有脚本”等批量请求时 allRequest=true。";
+    private const string IntentClassifierPrompt = """
+                                                 <identity>
+                                                 你是 BetterGI 的意图分类器。
+                                                 </identity>
+
+                                                 <output_contract>
+                                                 只返回一个 JSON 对象，不要输出解释、代码块或 Markdown。
+                                                 输出字段固定为：
+                                                 {"pathingIntent":bool,"scriptSubscribeIntent":bool,"scriptDetailIntent":bool,"docHelpIntent":bool,"downloadIntent":bool,"statusQueryIntent":bool,"realtimeFeatureQuery":bool,"desiredFeatureValue":true|false|null,"featureKey":"autoPick|autoSkip|autoHangout|autoFishing|autoCook|autoEat|quickTeleport|mapMask|skillCd|null","allFeaturesRequest":bool,"allRequest":bool,"reason":"<=12字"}
+                                                 </output_contract>
+
+                                                 <decision_principles>
+                                                 - 输入里可能包含“最近对话上下文”和“当前用户输入”，请优先依据“当前用户输入”判定。
+                                                 - 只有当前句存在代词（如“她/这个/那个”）时，才结合最近对话上下文消歧。
+                                                 - 宁可少判 true，也不要把知识问答误判成执行型脚本请求。
+                                                 - “材料”这个词本身不能直接推出 pathingIntent=true；角色培养材料、突破材料、天赋材料通常是知识问答。
+                                                 </decision_principles>
+
+                                                 <rules>
+                                                 1. pathingIntent=true 仅用于明确要执行地图追踪脚本的请求，如采集路线、跑图、刷怪、讨伐、锄地。
+                                                 2. 角色知识 / 培养 / 突破 / 天赋 / 武器 / 圣遗物 / 配队 / 机制问答 -> pathingIntent=false。
+                                                 3. 用户表达“订阅/导入/安装脚本”时，scriptSubscribeIntent=true。
+                                                 4. 用户表达“介绍脚本/用途/做什么”时，scriptDetailIntent=true。
+                                                 5. 用户表达报错排查、不会用、使用指导、FAQ、下载安装等时，docHelpIntent=true；下载或版本信息时，downloadIntent=true。
+                                                 6. 用户表达查看功能状态时，statusQueryIntent=true；表达实时触发相关状态时，realtimeFeatureQuery=true。
+                                                 7. 用户表达开关意图时，desiredFeatureValue 输出 true/false，否则 null；如果能识别具体功能，featureKey 输出标准键名，否则 null。
+                                                 8. 用户表达“全部/所有/一键/全开/全关”功能开关时，allFeaturesRequest=true；表达“全部订阅/一次性全部执行/所有脚本”等批量请求时，allRequest=true。
+                                                 </rules>
+
+                                                 <examples>
+                                                 <example>
+                                                 用户：我想要练可莉需要什么
+                                                 输出：{"pathingIntent":false,"scriptSubscribeIntent":false,"scriptDetailIntent":false,"docHelpIntent":false,"downloadIntent":false,"statusQueryIntent":false,"realtimeFeatureQuery":false,"desiredFeatureValue":null,"featureKey":null,"allFeaturesRequest":false,"allRequest":false,"reason":"角色培养"}
+                                                 </example>
+                                                 <example>
+                                                 用户：帮我找枫丹泡泡桔采集路线
+                                                 输出：{"pathingIntent":true,"scriptSubscribeIntent":false,"scriptDetailIntent":false,"docHelpIntent":false,"downloadIntent":false,"statusQueryIntent":false,"realtimeFeatureQuery":false,"desiredFeatureValue":null,"featureKey":null,"allFeaturesRequest":false,"allRequest":false,"reason":"采集路线"}
+                                                 </example>
+                                                 <example>
+                                                 用户：导入甜甜花采集脚本
+                                                 输出：{"pathingIntent":false,"scriptSubscribeIntent":true,"scriptDetailIntent":false,"docHelpIntent":false,"downloadIntent":false,"statusQueryIntent":false,"realtimeFeatureQuery":false,"desiredFeatureValue":null,"featureKey":null,"allFeaturesRequest":false,"allRequest":false,"reason":"订阅脚本"}
+                                                 </example>
+                                                 <example>
+                                                 用户：这个脚本做什么
+                                                 输出：{"pathingIntent":false,"scriptSubscribeIntent":false,"scriptDetailIntent":true,"docHelpIntent":false,"downloadIntent":false,"statusQueryIntent":false,"realtimeFeatureQuery":false,"desiredFeatureValue":null,"featureKey":null,"allFeaturesRequest":false,"allRequest":false,"reason":"脚本介绍"}
+                                                 </example>
+                                                 </examples>
+                                                 """;
     private static readonly HashSet<string> SubscribeArgumentAllowedKeys = new(StringComparer.OrdinalIgnoreCase)
     {
         "name",
@@ -245,6 +341,11 @@ public partial class AiChatViewModel : ViewModel
     [
         "原神", "角色", "材料", "突破", "天赋", "命座", "武器", "圣遗物", "配队", "技能",
         "介绍", "是谁", "背景", "生日", "cv", "培养"
+    ];
+    private static readonly string[] CharacterKnowledgeKeywords =
+    [
+        "角色", "材料", "突破", "天赋", "命座", "武器", "圣遗物", "配队", "技能", "培养",
+        "养成", "毕业", "练", "练度", "需要什么", "要什么"
     ];
     private static readonly string[] BetterGiDomainKeywords =
     [
@@ -441,6 +542,20 @@ public partial class AiChatViewModel : ViewModel
                 LogChat("system", subscribeNotice);
             }
 
+            toolCalls = CoerceGeneralKnowledgeToolCalls(content, toolCalls, intent, out var knowledgeNotice);
+            if (!string.IsNullOrWhiteSpace(knowledgeNotice))
+            {
+                AddChatMessage("system", knowledgeNotice);
+                LogChat("system", knowledgeNotice);
+            }
+
+            toolCalls = CoerceCharacterKnowledgeFollowUpToolCalls(content, toolCalls, intent, out var knowledgeFollowUpNotice);
+            if (!string.IsNullOrWhiteSpace(knowledgeFollowUpNotice))
+            {
+                AddChatMessage("system", knowledgeFollowUpNotice);
+                LogChat("system", knowledgeFollowUpNotice);
+            }
+
             toolCalls = NormalizeAndFilterToolCalls(toolCalls, out var normalizeNotice);
             if (!string.IsNullOrWhiteSpace(normalizeNotice))
             {
@@ -534,9 +649,35 @@ public partial class AiChatViewModel : ViewModel
             {
                 RecordPlannedToolCalls(toolCalls, toolExecutionCounts);
                 RecordExecutedWebSearchQueries(toolCalls, executedWebSearchQueryKeys);
-                await ExecuteMcpToolCallsAsync(toolCalls);
-                executedMcpRound = true;
+                var executedCalls = await ExecuteMcpToolCallsAsync(toolCalls);
+                executedMcpRound = executedCalls.Count > 0;
                 toolCalls = [];
+
+                var characterAutomationSearchCalls = BuildCharacterAutomationSearchCalls(content, intent, executedCalls);
+                if (characterAutomationSearchCalls.Count > 0)
+                {
+                    RecordPlannedToolCalls(characterAutomationSearchCalls, toolExecutionCounts);
+                    RecordExecutedWebSearchQueries(characterAutomationSearchCalls, executedWebSearchQueryKeys);
+                    var searchNotice = $"已根据角色材料结果规划可自动执行部分：{string.Join("、", characterAutomationSearchCalls.Select(call => call.Name).Distinct(StringComparer.OrdinalIgnoreCase))}";
+                    AddChatMessage("system", searchNotice);
+                    LogChat("system", searchNotice);
+
+                    var automationSearchResults = await ExecuteMcpToolCallsAsync(characterAutomationSearchCalls);
+                    executedMcpRound = executedMcpRound || automationSearchResults.Count > 0;
+
+                    var characterAutomationRunCalls = BuildCharacterAutomationRunCalls(automationSearchResults);
+                    if (characterAutomationRunCalls.Count > 0)
+                    {
+                        RecordPlannedToolCalls(characterAutomationRunCalls, toolExecutionCounts);
+                        RecordExecutedWebSearchQueries(characterAutomationRunCalls, executedWebSearchQueryKeys);
+                        var runNotice = $"已为可自动化材料生成执行步骤：{string.Join("、", characterAutomationRunCalls.Select(call => call.Name).Distinct(StringComparer.OrdinalIgnoreCase))}";
+                        AddChatMessage("system", runNotice);
+                        LogChat("system", runNotice);
+
+                        var automationRunResults = await ExecuteMcpToolCallsAsync(characterAutomationRunCalls);
+                        executedMcpRound = executedMcpRound || automationRunResults.Count > 0;
+                    }
+                }
 
                 StatusText = "AI 正在整理答案...";
                 LogChat("system", "进入最终答复阶段：禁用 MCP 调用，禁用 JSON 响应格式。");
@@ -612,7 +753,7 @@ public partial class AiChatViewModel : ViewModel
         }
         catch (Exception ex)
         {
-            var notice = $"请求失败: {ex.Message}";
+            var notice = FormatAiFailureNotice(ex.Message);
             AddChatMessage("system", notice);
             LogChat("system", notice);
             StatusText = "请求失败";
@@ -738,15 +879,16 @@ public partial class AiChatViewModel : ViewModel
         }
     }
 
-    private async Task ExecuteMcpToolCallsAsync(IReadOnlyList<McpToolCall> toolCalls)
+    private async Task<IReadOnlyList<ExecutedMcpToolCall>> ExecuteMcpToolCallsAsync(IReadOnlyList<McpToolCall> toolCalls)
     {
         if (toolCalls.Count == 0)
         {
-            return;
+            return [];
         }
 
         McpBusy = true;
         var availableToolNames = BuildToolNameSet();
+        var executed = new List<ExecutedMcpToolCall>(toolCalls.Count);
         try
         {
             foreach (var call in toolCalls)
@@ -806,6 +948,7 @@ public partial class AiChatViewModel : ViewModel
                     var message = $"{prefix} · {call.Name}\n{formattedResult}";
                     AddChatMessage("mcp", message, DefaultMaxChatMessageChars);
                     LogChat($"mcp:{call.Name}", message);
+                    executed.Add(new ExecutedMcpToolCall(call.Name, argumentsJson, result));
                     if (result.IsError && !Config.ShowMcpVisualizationOutput)
                     {
                         var notice = $"MCP 调用失败：{call.Name}";
@@ -834,6 +977,8 @@ public partial class AiChatViewModel : ViewModel
         {
             McpBusy = false;
         }
+
+        return executed;
     }
 
     private IReadOnlyList<McpToolCall> ParseMcpToolCalls(string reply)
@@ -2445,6 +2590,27 @@ public partial class AiChatViewModel : ViewModel
         return true;
     }
 
+    private static string FormatAiFailureNotice(string? message)
+    {
+        var reason = FormatAiFailureReason(message);
+        return reason.StartsWith("请求失败", StringComparison.OrdinalIgnoreCase)
+            ? reason
+            : $"请求失败: {reason}";
+    }
+
+    private static string FormatAiFailureReason(string? message)
+    {
+        var text = message?.Trim();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return "AI 接口返回了空错误信息。";
+        }
+
+        return text.StartsWith("请求失败:", StringComparison.OrdinalIgnoreCase)
+            ? text["请求失败:".Length..].Trim()
+            : text;
+    }
+
     private static bool IsRealtimeFeatureQuery(string text)
     {
         if (string.IsNullOrWhiteSpace(text))
@@ -2612,7 +2778,7 @@ public partial class AiChatViewModel : ViewModel
         }
         catch (Exception ex)
         {
-            LogChat("system", $"意图分类失败，已回退关键词规则：{ex.Message}");
+            LogChat("system", $"意图分类已回退关键词规则：{FormatAiFailureReason(ex.Message)}");
         }
 
         return null;
@@ -3470,6 +3636,448 @@ public partial class AiChatViewModel : ViewModel
 
         notice = "检测到“订阅/导入脚本”意图，已将执行操作改写为订阅导入工具（bgi.script.subscribe）。";
         return rewritten;
+    }
+
+    private static IReadOnlyList<McpToolCall> CoerceGeneralKnowledgeToolCalls(
+        string userText,
+        IReadOnlyList<McpToolCall> toolCalls,
+        IntentClassification intent,
+        out string? notice)
+    {
+        notice = null;
+        if (toolCalls.Count == 0 || !ShouldForceKnowledgeWebSearch(userText, intent, toolCalls))
+        {
+            return toolCalls;
+        }
+
+        var knowledgeCall = BuildKnowledgeWebSearchCall(userText);
+        if (knowledgeCall == null)
+        {
+            return toolCalls;
+        }
+
+        notice = "检测到原神角色/培养知识问答，已改为优先联网检索资料，不再搜索脚本。";
+        return new[] { knowledgeCall };
+    }
+
+    private IReadOnlyList<McpToolCall> CoerceCharacterKnowledgeFollowUpToolCalls(
+        string userText,
+        IReadOnlyList<McpToolCall> toolCalls,
+        IntentClassification intent,
+        out string? notice)
+    {
+        notice = null;
+        if (toolCalls.Count == 0 ||
+            !IsCharacterKnowledgeQuery(userText) ||
+            ShouldAutoPrepareCharacterMaterials(userText, intent) ||
+            !HasRecentCharacterKnowledgeResult())
+        {
+            return toolCalls;
+        }
+
+        var hasIrrelevantToolCall = toolCalls.Any(call =>
+            !string.Equals(call.Name, "bgi.web.search", StringComparison.OrdinalIgnoreCase));
+        if (!hasIrrelevantToolCall)
+        {
+            return toolCalls;
+        }
+
+        notice = "检测到当前问题可以直接基于上一轮角色材料结果整理，无需再次调用无关工具。";
+        return [];
+    }
+
+    private static bool ShouldForceKnowledgeWebSearch(string userText, IntentClassification intent, IReadOnlyList<McpToolCall> toolCalls)
+    {
+        if (string.IsNullOrWhiteSpace(userText) || toolCalls.Count == 0)
+        {
+            return false;
+        }
+
+        if (intent.PathingPriorityIntent ||
+            intent.ScriptSubscribeIntent ||
+            intent.ScriptDetailIntent ||
+            intent.DocHelpIntent ||
+            intent.DownloadIntent ||
+            intent.StatusQueryIntent ||
+            intent.RealtimeFeatureQueryIntent ||
+            intent.AllFeaturesRequest ||
+            !string.IsNullOrWhiteSpace(intent.FeatureKey))
+        {
+            return false;
+        }
+
+        if (toolCalls.Any(call => string.Equals(call.Name, "bgi.web.search", StringComparison.OrdinalIgnoreCase)))
+        {
+            return false;
+        }
+
+        if (IsCharacterKnowledgeQuery(userText))
+        {
+            return true;
+        }
+
+        return IsGeneralKnowledgeQuery(userText) &&
+               toolCalls.Any(call => IsScriptToolCallName(call.Name));
+    }
+
+    private static bool IsScriptToolCallName(string? toolName)
+    {
+        return string.Equals(toolName, "bgi.script.search", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(toolName, "bgi.script.list", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(toolName, "bgi.script.detail", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(toolName, "bgi.script.run", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsCharacterKnowledgeQuery(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        if (ContainsAny(text, BetterGiDomainKeywords))
+        {
+            return false;
+        }
+
+        return ContainsAny(text, CharacterKnowledgeKeywords);
+    }
+
+    private static McpToolCall? BuildKnowledgeWebSearchCall(string userText)
+    {
+        var knowledgeQuery = BuildKnowledgeWebSearchQuery(userText);
+        if (string.IsNullOrWhiteSpace(knowledgeQuery))
+        {
+            return null;
+        }
+
+        var args = new JsonObject
+        {
+            ["query"] = knowledgeQuery,
+            ["maxResults"] = 3,
+            ["provider"] = "auto"
+        };
+        return new McpToolCall("bgi.web.search", args.ToJsonString());
+    }
+
+    private static IReadOnlyList<McpToolCall> BuildCharacterAutomationSearchCalls(
+        string userText,
+        IntentClassification intent,
+        IReadOnlyList<ExecutedMcpToolCall> executedCalls)
+    {
+        if (!ShouldAutoPrepareCharacterMaterials(userText, intent) || executedCalls.Count == 0)
+        {
+            return [];
+        }
+
+        var queries = new List<string>();
+        foreach (var executed in executedCalls)
+        {
+            if (!string.Equals(executed.Name, "bgi.web.search", StringComparison.OrdinalIgnoreCase) ||
+                executed.Result.IsError)
+            {
+                continue;
+            }
+
+            queries.AddRange(ExtractAutomatableMaterialQueries(userText, executed.Result.Content));
+        }
+
+        if (queries.Count == 0)
+        {
+            return [];
+        }
+
+        var distinctQueries = queries
+            .Where(query => !string.IsNullOrWhiteSpace(query))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(2)
+            .ToList();
+
+        return distinctQueries
+            .Select(query => new McpToolCall(
+                "bgi.script.search",
+                new JsonObject
+                {
+                    ["query"] = query,
+                    ["type"] = "pathing",
+                    ["limit"] = 1
+                }.ToJsonString()))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<McpToolCall> BuildCharacterAutomationRunCalls(IReadOnlyList<ExecutedMcpToolCall> executedCalls)
+    {
+        if (executedCalls.Count == 0)
+        {
+            return [];
+        }
+
+        var calls = new List<McpToolCall>(4);
+        foreach (var executed in executedCalls)
+        {
+            if (!string.Equals(executed.Name, "bgi.script.search", StringComparison.OrdinalIgnoreCase) ||
+                executed.Result.IsError)
+            {
+                continue;
+            }
+
+            if (TryBuildScriptExecutionCallsFromSearchResult(executed.Result.Content, out var followUps))
+            {
+                calls.AddRange(followUps);
+            }
+        }
+
+        return calls
+            .Take(4)
+            .ToArray();
+    }
+
+    private static bool ShouldAutoPrepareCharacterMaterials(string userText, IntentClassification intent)
+    {
+        if (string.IsNullOrWhiteSpace(userText) ||
+            !IsCharacterKnowledgeQuery(userText))
+        {
+            return false;
+        }
+
+        if (intent.PathingPriorityIntent ||
+            intent.ScriptSubscribeIntent ||
+            intent.ScriptDetailIntent ||
+            intent.DocHelpIntent ||
+            intent.DownloadIntent)
+        {
+            return false;
+        }
+
+        return ContainsAny(userText, "准备", "收集", "直接运行", "直接执行", "自动", "能做的部分", "帮我处理");
+    }
+
+    private bool HasRecentCharacterKnowledgeResult()
+    {
+        for (var i = Messages.Count - 1; i >= 0 && i >= Messages.Count - 8; i--)
+        {
+            var message = Messages[i];
+            if (!message.IsMcp || string.IsNullOrWhiteSpace(message.Content))
+            {
+                continue;
+            }
+
+            var content = message.Content;
+            if (content.Contains("honeyhunter_character_data", StringComparison.OrdinalIgnoreCase) &&
+                content.Contains("allRequired", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static IReadOnlyList<string> ExtractAutomatableMaterialQueries(string userText, string webSearchContent)
+    {
+        if (string.IsNullOrWhiteSpace(webSearchContent))
+        {
+            return [];
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(webSearchContent);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object ||
+                !doc.RootElement.TryGetProperty("results", out var resultsElement) ||
+                resultsElement.ValueKind != JsonValueKind.Array ||
+                resultsElement.GetArrayLength() == 0)
+            {
+                return [];
+            }
+
+            var materialSourceName = userText.Contains("天赋", StringComparison.OrdinalIgnoreCase)
+                ? "skillAscension"
+                : userText.Contains("突破", StringComparison.OrdinalIgnoreCase)
+                    ? "characterAscension"
+                    : "allRequired";
+
+            if (resultsElement[0].ValueKind != JsonValueKind.Object ||
+                !resultsElement[0].TryGetProperty("materials", out var materialsElement) ||
+                materialsElement.ValueKind != JsonValueKind.Object)
+            {
+                return [];
+            }
+
+            if (!materialsElement.TryGetProperty(materialSourceName, out var sourceElement) ||
+                sourceElement.ValueKind != JsonValueKind.Array)
+            {
+                if (!materialsElement.TryGetProperty("allRequired", out sourceElement) ||
+                    sourceElement.ValueKind != JsonValueKind.Array)
+                {
+                    return [];
+                }
+            }
+
+            var queries = new List<string>();
+            foreach (var item in sourceElement.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object ||
+                    !item.TryGetProperty("name", out var nameElement) ||
+                    nameElement.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var materialName = nameElement.GetString()?.Trim();
+                var query = NormalizeAutomatableMaterialQuery(materialName);
+                if (!string.IsNullOrWhiteSpace(query))
+                {
+                    queries.Add(query);
+                }
+            }
+
+            return queries
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
+    }
+
+    private static string? NormalizeAutomatableMaterialQuery(string? materialName)
+    {
+        if (string.IsNullOrWhiteSpace(materialName))
+        {
+            return null;
+        }
+
+        var name = materialName.Trim();
+        if (ContainsAny(name, "摩拉", "智识之冕", "哲学", "指引", "教导", "玛瑙", "北风之环", "常燃火种"))
+        {
+            return null;
+        }
+
+        if (name.EndsWith("绘卷", StringComparison.OrdinalIgnoreCase))
+        {
+            return "绘卷";
+        }
+
+        if (ContainsAny(name, "蘑菇", "花", "果", "草", "矿", "鱼"))
+        {
+            return name;
+        }
+
+        return name.EndsWith("绘卷", StringComparison.OrdinalIgnoreCase) ? "绘卷" : null;
+    }
+
+    private static bool TryBuildScriptExecutionCallsFromSearchResult(string searchContent, out List<McpToolCall> calls)
+    {
+        calls = new List<McpToolCall>();
+        if (string.IsNullOrWhiteSpace(searchContent))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(searchContent);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            if (TryGetFirstRunnableScriptName(doc.RootElement, "matches", out var localName))
+            {
+                calls.Add(new McpToolCall(
+                    "bgi.script.run",
+                    new JsonObject
+                    {
+                        ["name"] = localName,
+                        ["type"] = "pathing"
+                    }.ToJsonString()));
+                return true;
+            }
+
+            if (doc.RootElement.TryGetProperty("remote", out var remoteElement) &&
+                remoteElement.ValueKind == JsonValueKind.Object &&
+                TryGetFirstRunnableScriptName(remoteElement, "matches", out var remoteName))
+            {
+                calls.Add(new McpToolCall(
+                    "bgi.script.subscribe",
+                    new JsonObject
+                    {
+                        ["names"] = new JsonArray(JsonValue.Create(remoteName)),
+                        ["importNow"] = true
+                    }.ToJsonString()));
+                calls.Add(new McpToolCall(
+                    "bgi.script.run",
+                    new JsonObject
+                    {
+                        ["name"] = remoteName,
+                        ["type"] = "pathing"
+                    }.ToJsonString()));
+                return true;
+            }
+
+            return false;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetFirstRunnableScriptName(JsonElement root, string propertyName, out string scriptName)
+    {
+        scriptName = string.Empty;
+        if (!root.TryGetProperty(propertyName, out var matchesElement) ||
+            matchesElement.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        foreach (var item in matchesElement.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object ||
+                !item.TryGetProperty("name", out var nameElement) ||
+                nameElement.ValueKind != JsonValueKind.String)
+            {
+                continue;
+            }
+
+            var candidate = nameElement.GetString()?.Trim();
+            if (string.IsNullOrWhiteSpace(candidate) ||
+                candidate.Contains("不可用", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            scriptName = candidate;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string BuildKnowledgeWebSearchQuery(string text)
+    {
+        var query = BuildDocSearchQuery(text);
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return string.Empty;
+        }
+
+        if (!query.Contains("原神", StringComparison.OrdinalIgnoreCase))
+        {
+            query = $"原神 {query}";
+        }
+
+        if (IsCharacterKnowledgeQuery(text) &&
+            ContainsAny(text, "练", "培养", "养成", "毕业", "需要什么", "要什么") &&
+            !ContainsAny(query, "材料", "突破", "天赋", "武器", "圣遗物", "配队"))
+        {
+            query = $"{query} 培养材料 突破材料 天赋材料";
+        }
+
+        return query.Trim();
     }
 
     private static TimeSpan GetMcpToolTimeout(string toolName)
@@ -6358,6 +6966,7 @@ public partial class AiChatViewModel : ViewModel
         string? ClassifierReason);
 
     private readonly record struct AiReplyResult(string RawReply, int StreamMessageIndex);
+    private readonly record struct ExecutedMcpToolCall(string Name, string ArgumentsJson, McpToolCallResult Result);
 
     private sealed class McpToolCall
     {

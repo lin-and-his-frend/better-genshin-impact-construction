@@ -1,0 +1,2 @@
+适用于 .NET MSBuild 版本 17.11.22+17752cebd
+D:\Users\admin\Desktop\bgi项目\原版\better-genshin-impact-construction\BetterGenshinImpact\BetterGenshinImpact.csproj : warning NU1902: Package 'MimeKit' 4.15.0 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-g7hc-96xr-gvvx

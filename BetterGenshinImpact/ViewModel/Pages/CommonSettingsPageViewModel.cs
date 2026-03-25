@@ -341,7 +341,7 @@ public partial class CommonSettingsPageViewModel : ViewModel
             throw new Exception($"下载语言文件失败：{cultureName}.json", lastError);
         }
 
-        var dir = Global.Absolute(@"User\I18n");
+        var dir = UserPathProvider.I18nRoot;
         Directory.CreateDirectory(dir);
         var path = Path.Combine(dir, $"{cultureName}.json");
         var tmp = $"{path}.{Guid.NewGuid():N}.tmp";
@@ -531,7 +531,7 @@ public partial class CommonSettingsPageViewModel : ViewModel
     [RelayCommand]
     public void OnGoToFolder()
     {
-        var path = Global.Absolute(@"log\screenshot\");
+        var path = UserPathProvider.ScreenshotLogRoot;
         if (!Directory.Exists(path))
         {
             Directory.CreateDirectory(path);
@@ -543,7 +543,7 @@ public partial class CommonSettingsPageViewModel : ViewModel
     [RelayCommand]
     public void OnGoToLogFolder()
     {
-        var path = Global.Absolute(@"log");
+        var path = UserPathProvider.LogRoot;
         if (!Directory.Exists(path))
         {
             Directory.CreateDirectory(path);
@@ -586,9 +586,6 @@ public partial class CommonSettingsPageViewModel : ViewModel
 
             await Task.Run(() =>
             {
-                // 确保数据库已同步
-                UserCache.SyncToDb();
-
                 using var zipArchive = ZipFile.Open(backupPath, ZipArchiveMode.Create);
 
                 // 1. 备份数据库文件
@@ -628,27 +625,41 @@ public partial class CommonSettingsPageViewModel : ViewModel
                     }
                 }
 
-                // 2. 如果勾选了包含脚本，备份脚本目录
+                // 2. 如果勾选了包含脚本，备份所有文件化工作流、规则和资源目录
                 if (includeScripts)
                 {
-                    var scriptDirs = new[]
+                    foreach (var dirPath in UserPathProvider.BackupDirectories)
                     {
-                        "JsScript",
-                        "KeyMouseScript",
-                        "AutoFight",
-                        "AutoGeniusInvokation",
-                        "AutoPathing",
-                        "ScriptGroup",
-                        "Images"
-                    };
-
-                    foreach (var dir in scriptDirs)
-                    {
-                        var dirPath = Path.Combine(Global.UserDataRoot, dir);
                         if (Directory.Exists(dirPath))
                         {
-                            AddDirectoryToZip(zipArchive, dirPath, dir);
+                            var entryName = Path.GetRelativePath(Global.UserDataRoot, dirPath)
+                                .Replace(Path.DirectorySeparatorChar, '/');
+                            AddDirectoryToZip(zipArchive, dirPath, entryName);
                         }
+                    }
+
+                    var legacyFileEntries = new (string FilePath, string EntryName, string? PreferredPath)[]
+                    {
+                        (UserPathProvider.LegacyPickExactBlacklistTextPath, "pick_black_lists.txt", UserPathProvider.PickExactBlacklistPath),
+                        (UserPathProvider.LegacyPickFuzzyBlacklistTextPath, "pick_fuzzy_black_lists.txt", UserPathProvider.PickFuzzyBlacklistPath),
+                        (UserPathProvider.LegacyPickWhitelistTextPath, "pick_white_lists.txt", UserPathProvider.PickWhitelistPath),
+                        (UserPathProvider.LegacyPickBlacklistJsonPath, "pick_black_lists.json", UserPathProvider.PickExactBlacklistPath),
+                        (UserPathProvider.LegacyPickWhitelistJsonPath, "pick_white_lists.json", UserPathProvider.PickWhitelistPath)
+                    };
+
+                    foreach (var (filePath, entryName, preferredPath) in legacyFileEntries)
+                    {
+                        if (!File.Exists(filePath))
+                        {
+                            continue;
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(preferredPath) && File.Exists(preferredPath))
+                        {
+                            continue;
+                        }
+
+                        AddFileToZip(zipArchive, filePath, entryName);
                     }
                 }
             });
@@ -818,8 +829,7 @@ public partial class CommonSettingsPageViewModel : ViewModel
 
             await Task.Run(() =>
             {
-                // 先同步并关闭所有数据库连接
-                UserCache.SyncToDb();
+                // 关闭连接池，避免导入替换数据库文件时仍持有句柄
                 SqliteConnection.ClearAllPools();
 
                 using var zipArchive = ZipFile.OpenRead(importPath);
@@ -901,38 +911,26 @@ public partial class CommonSettingsPageViewModel : ViewModel
                     }
                 }
 
-                // 2. 导入脚本目录
-                var scriptDirs = new[]
+                // 2. 导入文件化工作流、规则和资源目录，同时兼容旧备份中的旧顶层目录名
+                foreach (var entry in zipArchive.Entries)
                 {
-                    "JsScript",
-                    "KeyMouseScript",
-                    "AutoFight",
-                    "AutoGeniusInvokation",
-                    "AutoPathing",
-                    "ScriptGroup",
-                    "OneDragon",
-                    "Images"
-                };
-
-                foreach (var dir in scriptDirs)
-                {
-                    var entries = zipArchive.Entries.Where(e => e.FullName.StartsWith(dir + "/", StringComparison.OrdinalIgnoreCase));
-                    foreach (var entry in entries)
+                    if (string.IsNullOrEmpty(entry.Name))
                     {
-                        if (string.IsNullOrEmpty(entry.Name)) // 跳过目录条目
-                        {
-                            continue;
-                        }
-
-                        var destPath = Path.Combine(Global.UserDataRoot, entry.FullName.Replace('/', Path.DirectorySeparatorChar));
-                        var destDir = Path.GetDirectoryName(destPath);
-                        if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))
-                        {
-                            Directory.CreateDirectory(destDir);
-                        }
-
-                        entry.ExtractToFile(destPath, true);
+                        continue;
                     }
+
+                    if (!UserPathProvider.TryResolveBackupEntryPath(entry.FullName, out var destPath))
+                    {
+                        continue;
+                    }
+
+                    var destDir = Path.GetDirectoryName(destPath);
+                    if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))
+                    {
+                        Directory.CreateDirectory(destDir);
+                    }
+
+                    entry.ExtractToFile(destPath, true);
                 }
             });
 
@@ -958,6 +956,11 @@ public partial class CommonSettingsPageViewModel : ViewModel
             var zipEntryName = Path.Combine(entryName, relativePath).Replace(Path.DirectorySeparatorChar, '/');
             zipArchive.CreateEntryFromFile(file, zipEntryName, CompressionLevel.Optimal);
         }
+    }
+
+    private void AddFileToZip(ZipArchive zipArchive, string filePath, string entryName)
+    {
+        zipArchive.CreateEntryFromFile(filePath, entryName.Replace(Path.DirectorySeparatorChar, '/'), CompressionLevel.Optimal);
     }
 
     [RelayCommand]

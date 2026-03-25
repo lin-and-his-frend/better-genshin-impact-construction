@@ -68,13 +68,7 @@ public class ConfigService : IConfigService
         _rwLock.EnterReadLock();
         try
         {
-            if (!UserStorage.TryReadMainConfig(out var json) || string.IsNullOrWhiteSpace(json))
-            {
-                return new AllConfig();
-            }
-
-            var config = JsonSerializer.Deserialize<AllConfig>(json, JsonOptions);
-            if (config == null)
+            if (!AppConfigStore.TryRead(out var config) || config == null)
             {
                 return new AllConfig();
             }
@@ -99,8 +93,10 @@ public class ConfigService : IConfigService
         _rwLock.EnterWriteLock();
         try
         {
-            var json = JsonSerializer.Serialize(config, JsonOptions);
-            UserStorage.TryWriteMainConfig(json);
+            if (!AppConfigStore.TryWrite(config))
+            {
+                Console.WriteLine("Failed to persist settings to the direct SQLite store.");
+            }
         }
         catch (Exception e)
         {
@@ -117,24 +113,7 @@ public class ConfigService : IConfigService
     {
         lock (_locker)
         {
-            if (!UserStorage.TryReadMainConfig(out var json) || string.IsNullOrWhiteSpace(json))
-            {
-                return false;
-            }
-
-            AllConfig? incoming;
-            try
-            {
-                incoming = JsonSerializer.Deserialize<AllConfig>(json, JsonOptions);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.Message);
-                Console.WriteLine(ex.StackTrace);
-                return false;
-            }
-
-            if (incoming == null)
+            if (!AppConfigStore.TryRead(out var incoming) || incoming == null)
             {
                 return false;
             }

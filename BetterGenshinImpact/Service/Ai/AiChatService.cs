@@ -237,7 +237,11 @@ public sealed class AiChatService
 
             if ((int)streamResult.statusCode >= 400)
             {
-                throw new InvalidOperationException($"请求失败: {(int)streamResult.statusCode} {streamResult.reasonPhrase}\n{streamResult.body}");
+                throw new InvalidOperationException(BuildHttpFailureMessage(
+                    streamResult.statusCode,
+                    streamResult.reasonPhrase,
+                    streamResult.body,
+                    config.Model));
             }
 
             return streamResult.content;
@@ -252,7 +256,11 @@ public sealed class AiChatService
         var body = result.body;
         if ((int)result.statusCode >= 400)
         {
-            throw new InvalidOperationException($"请求失败: {(int)result.statusCode} {result.reasonPhrase}\n{body}");
+            throw new InvalidOperationException(BuildHttpFailureMessage(
+                result.statusCode,
+                result.reasonPhrase,
+                body,
+                config.Model));
         }
 
         using var doc = JsonDocument.Parse(body);
@@ -281,6 +289,87 @@ public sealed class AiChatService
         }
 
         return string.Empty;
+    }
+
+    private static string BuildHttpFailureMessage(HttpStatusCode statusCode, string reasonPhrase, string? body, string? model)
+    {
+        var trimmedBody = body?.Trim() ?? string.Empty;
+        var statusText = $"{(int)statusCode} {reasonPhrase}".Trim();
+        var modelName = model?.Trim();
+
+        if (TryParseErrorPayload(trimmedBody, out var code, out var message))
+        {
+            if (statusCode == HttpStatusCode.Forbidden &&
+                (code == 30003 || string.Equals(message, "Model disabled.", StringComparison.OrdinalIgnoreCase)))
+            {
+                return string.IsNullOrWhiteSpace(modelName)
+                    ? "当前 AI 模型已被服务端禁用。请在 AI 设置中更换可用模型，或联系服务端管理员启用该模型。"
+                    : $"当前 AI 模型“{modelName}”已被服务端禁用。请在 AI 设置中更换可用模型，或联系服务端管理员启用该模型。";
+            }
+
+            if (statusCode == HttpStatusCode.Unauthorized)
+            {
+                return "AI 接口鉴权失败。请检查 API Key 是否正确，或确认当前服务端是否允许此账号访问。";
+            }
+
+            if (statusCode == HttpStatusCode.Forbidden)
+            {
+                return string.IsNullOrWhiteSpace(message)
+                    ? $"AI 请求被服务端拒绝（{statusText}）。请检查当前模型、账号权限或服务端策略。"
+                    : $"AI 请求被服务端拒绝（{statusText}）：{message}";
+            }
+
+            return string.IsNullOrWhiteSpace(message)
+                ? $"AI 请求失败（{statusText}）。"
+                : $"AI 请求失败（{statusText}）：{message}";
+        }
+
+        return string.IsNullOrWhiteSpace(trimmedBody)
+            ? $"AI 请求失败（{statusText}）。"
+            : $"AI 请求失败（{statusText}）：{trimmedBody}";
+    }
+
+    private static bool TryParseErrorPayload(string body, out int? code, out string? message)
+    {
+        code = null;
+        message = null;
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return false;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            if (doc.RootElement.TryGetProperty("code", out var codeElement))
+            {
+                if (codeElement.ValueKind == JsonValueKind.Number && codeElement.TryGetInt32(out var intCode))
+                {
+                    code = intCode;
+                }
+                else if (codeElement.ValueKind == JsonValueKind.String && int.TryParse(codeElement.GetString(), out var parsedCode))
+                {
+                    code = parsedCode;
+                }
+            }
+
+            if (doc.RootElement.TryGetProperty("message", out var messageElement) &&
+                messageElement.ValueKind == JsonValueKind.String)
+            {
+                message = messageElement.GetString()?.Trim();
+            }
+
+            return code.HasValue || !string.IsNullOrWhiteSpace(message);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static string ExtractDeltaContent(JsonElement deltaElement)

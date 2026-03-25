@@ -224,7 +224,7 @@ public partial class ScriptGroupProject : ObservableObject
         }
         else if (Type == "KeyMouse")
         {
-            var keyMouseRoot = Global.Absolute(@"User\KeyMouseScript");
+            var keyMouseRoot = UserPathProvider.KeyMouseScriptsRoot;
             if (!TryResolvePathUnderRoot(keyMouseRoot, [Name], out var macroPath))
             {
                 TaskControl.Logger.LogWarning("键鼠脚本路径非法，已阻止执行: {Name}", Name);

@@ -8,14 +8,21 @@ namespace BetterGenshinImpact.Core.Config;
 
 internal static class OneDragonConfigStore
 {
-    private const string ConfigFolder = "OneDragon";
+    // 一条龙配置改回文件化工作流资产，统一落在 User\Workflows\OneDragon。
+    // 这里保留对旧磁盘目录和旧数据库表的只读迁移兼容，但新的读写不再回写数据库。
+    private static string ConfigDirectory => UserPathProvider.OneDragonRoot;
 
     internal static IReadOnlyList<OneDragonFlowConfig> LoadAll()
     {
-        var configs = LoadFromDb();
+        var configs = LoadFromDisk();
         if (configs.Count == 0)
         {
-            configs = TryMigrateFromDisk();
+            configs = TryMigrateFromLegacyDisk();
+        }
+
+        if (configs.Count == 0)
+        {
+            configs = TryMigrateFromDb();
         }
 
         if (configs.Count == 0)
@@ -33,11 +40,15 @@ internal static class OneDragonConfigStore
             return LoadAll().FirstOrDefault();
         }
 
-        if (UserStorage.TryReadOneDragonConfig(name, out var json) && !string.IsNullOrWhiteSpace(json))
+        if (TryGetConfigFilePath(name, out var filePath))
         {
             try
             {
-                return JsonConvert.DeserializeObject<OneDragonFlowConfig>(json);
+                var json = UserFileService.ReadAllTextIfExists(filePath);
+                if (!string.IsNullOrWhiteSpace(json))
+                {
+                    return JsonConvert.DeserializeObject<OneDragonFlowConfig>(json);
+                }
             }
             catch
             {
@@ -51,30 +62,58 @@ internal static class OneDragonConfigStore
 
     internal static bool Save(OneDragonFlowConfig config)
     {
+        if (string.IsNullOrWhiteSpace(config.Name) || !TryGetConfigFilePath(config.Name, out var filePath))
+        {
+            return false;
+        }
+
         var json = JsonConvert.SerializeObject(config, Formatting.Indented);
-        return UserStorage.TryWriteOneDragonConfig(config.Name, json);
+        UserFileService.WriteAllText(filePath, json);
+        return true;
     }
 
     internal static bool Delete(string name)
     {
-        return UserStorage.DeleteOneDragonConfig(name);
+        return TryGetConfigFilePath(name, out var filePath) && UserFileService.DeleteFileIfExists(filePath);
     }
 
     internal static bool Rename(string oldName, OneDragonFlowConfig config)
     {
-        var json = JsonConvert.SerializeObject(config, Formatting.Indented);
-        var saved = UserStorage.TryWriteOneDragonConfig(config.Name, json);
-        if (saved && !string.Equals(oldName, config.Name, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(oldName) ||
+            string.IsNullOrWhiteSpace(config.Name) ||
+            !TryGetConfigFilePath(oldName, out var oldFilePath) ||
+            !TryGetConfigFilePath(config.Name, out var newFilePath))
         {
-            UserStorage.DeleteOneDragonConfig(oldName);
+            return false;
         }
 
-        return saved;
+        var json = JsonConvert.SerializeObject(config, Formatting.Indented);
+        UserFileService.WriteAllText(newFilePath, json);
+        if (!string.Equals(oldName, config.Name, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(oldFilePath, newFilePath, StringComparison.OrdinalIgnoreCase))
+        {
+            UserFileService.DeleteFileIfExists(oldFilePath);
+        }
+
+        return true;
     }
 
     internal static DateTimeOffset? GetLatestUpdatedUtc()
     {
-        return UserStorage.GetOneDragonLatestUpdatedUtc();
+        if (!Directory.Exists(ConfigDirectory))
+        {
+            return null;
+        }
+
+        var files = Directory.GetFiles(ConfigDirectory, "*.json", SearchOption.TopDirectoryOnly);
+        if (files.Length == 0)
+        {
+            return null;
+        }
+
+        return files
+            .Select(path => new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero))
+            .Max();
     }
 
     internal static IReadOnlyList<string> ListNames()
@@ -82,17 +121,20 @@ internal static class OneDragonConfigStore
         return LoadAll().Select(config => config.Name).ToList();
     }
 
-    private static List<OneDragonFlowConfig> LoadFromDb()
+    private static List<OneDragonFlowConfig> LoadFromDisk()
     {
-        var entries = UserStorage.ListOneDragonConfigs()
-            .OrderBy(entry => entry.UpdatedUtc ?? DateTimeOffset.MinValue);
+        Directory.CreateDirectory(ConfigDirectory);
 
         var configs = new List<OneDragonFlowConfig>();
-        foreach (var entry in entries)
+        foreach (var file in Directory.GetFiles(ConfigDirectory, "*.json", SearchOption.TopDirectoryOnly)
+                     .OrderBy(path => File.GetLastWriteTimeUtc(path)))
         {
             try
             {
-                var config = JsonConvert.DeserializeObject<OneDragonFlowConfig>(entry.Content);
+                var json = UserFileService.ReadAllTextIfExists(file);
+                var config = string.IsNullOrWhiteSpace(json)
+                    ? null
+                    : JsonConvert.DeserializeObject<OneDragonFlowConfig>(json);
                 if (config != null)
                 {
                     configs.Add(config);
@@ -106,15 +148,16 @@ internal static class OneDragonConfigStore
         return configs;
     }
 
-    private static List<OneDragonFlowConfig> TryMigrateFromDisk()
+    private static List<OneDragonFlowConfig> TryMigrateFromLegacyDisk()
     {
         var configs = new List<OneDragonFlowConfig>();
-        var folder = Path.Combine(Global.UserDataRoot, ConfigFolder);
+        var folder = UserPathProvider.LegacyOneDragonRoot;
         if (!Directory.Exists(folder))
         {
             return configs;
         }
 
+        Directory.CreateDirectory(ConfigDirectory);
         foreach (var file in Directory.GetFiles(folder, "*.json"))
         {
             try
@@ -126,10 +169,13 @@ internal static class OneDragonConfigStore
                     continue;
                 }
 
-                if (UserStorage.TryWriteOneDragonConfig(config.Name, json))
+                if (!TryGetConfigFilePath(config.Name, out var filePath))
                 {
-                    configs.Add(config);
+                    continue;
                 }
+
+                UserFileService.WriteAllText(filePath, json);
+                configs.Add(config);
             }
             catch
             {
@@ -137,5 +183,49 @@ internal static class OneDragonConfigStore
         }
 
         return configs;
+    }
+
+    private static List<OneDragonFlowConfig> TryMigrateFromDb()
+    {
+        var configs = new List<OneDragonFlowConfig>();
+        foreach (var entry in UserStorage.ListOneDragonConfigs()
+                     .OrderBy(item => item.UpdatedUtc ?? DateTimeOffset.MinValue))
+        {
+            try
+            {
+                var config = JsonConvert.DeserializeObject<OneDragonFlowConfig>(entry.Content);
+                if (config == null || string.IsNullOrWhiteSpace(config.Name) || !TryGetConfigFilePath(config.Name, out var filePath))
+                {
+                    continue;
+                }
+
+                UserFileService.WriteAllText(filePath, entry.Content);
+                configs.Add(config);
+            }
+            catch
+            {
+            }
+        }
+
+        return configs;
+    }
+
+    private static bool TryGetConfigFilePath(string name, out string filePath)
+    {
+        filePath = string.Empty;
+        var normalizedName = name.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedName) ||
+            normalizedName is "." or ".." ||
+            normalizedName.Contains('/') ||
+            normalizedName.Contains('\\') ||
+            normalizedName.Contains("..", StringComparison.Ordinal) ||
+            Path.IsPathRooted(normalizedName) ||
+            normalizedName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            return false;
+        }
+
+        filePath = Path.Combine(ConfigDirectory, normalizedName + ".json");
+        return true;
     }
 }

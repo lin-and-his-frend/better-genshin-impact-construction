@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using BetterGenshinImpact.Core.Config;
 using BetterGenshinImpact.GameTask.Model;
+using System.IO;
 
 namespace BetterGenshinImpact.GameTask.AutoStygianOnslaught;
 

@@ -4304,7 +4304,8 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             AutoPick = config.AutoPickConfig.Enabled,
             AutoSkip = config.AutoSkipConfig.Enabled,
             AutoFishing = config.AutoFishingConfig.Enabled,
-            AutoCook = config.AutoCookConfig.Enabled,
+            // AutoCook is now a one-shot task config, not a long-lived toggle.
+            AutoCook = false,
             AutoEat = config.AutoEatConfig.Enabled,
             QuickTeleport = config.QuickTeleportConfig.Enabled,
             MapMask = config.MapMaskConfig.Enabled
@@ -4332,10 +4333,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
                 config.AutoFishingConfig.Enabled = patch.AutoFishing.Value;
             }
 
-            if (patch.AutoCook.HasValue)
-            {
-                config.AutoCookConfig.Enabled = patch.AutoCook.Value;
-            }
+            // AutoCook no longer exposes an enabled flag in config.
 
             if (patch.AutoEat.HasValue)
             {

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using BetterGenshinImpact.GameTask.Model;
 using BetterGenshinImpact.Core.Config;
+using System.IO;
 
 namespace BetterGenshinImpact.GameTask.AutoDomain;
 

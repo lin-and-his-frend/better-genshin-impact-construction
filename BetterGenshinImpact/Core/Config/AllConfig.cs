@@ -296,7 +296,6 @@ public partial class AllConfig : ObservableObject
         AutoRedeemCodeConfig.PropertyChanged += OnAnyPropertyChanged;
         AutoEatConfig.PropertyChanged += OnAnyPropertyChanged;
         AutoLeyLineOutcropConfig.PropertyChanged += OnAnyPropertyChanged;
-        AutoCookConfig.PropertyChanged += OnAnyPropertyChanged;
         MapMaskConfig.PropertyChanged += OnAnyPropertyChanged;
         AutoMusicGameConfig.PropertyChanged += OnAnyPropertyChanged;
         GetGridIconsConfig.PropertyChanged += OnAnyPropertyChanged;

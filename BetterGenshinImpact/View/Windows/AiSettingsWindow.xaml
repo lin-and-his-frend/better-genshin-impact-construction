@@ -54,6 +54,7 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
@@ -108,23 +109,39 @@
                                           Grid.Column="0"
                                           Margin="0,0,12,0"
                                           FontTypography="BodyStrong"
-                                          Text="JSON Mode" />
+                                          Text="工具调用兼容层" />
                             <ui:StackPanel Grid.Row="4"
                                            Grid.Column="1"
                                            Orientation="Vertical">
                                 <ui:ToggleSwitch HorizontalAlignment="Left"
-                                                 IsChecked="{Binding Config.UseJsonMode, Mode=TwoWay}" />
+                                                 IsChecked="{Binding Config.UseLegacyToolCallCompatibility, Mode=TwoWay}" />
                                 <ui:TextBlock Margin="0,4,0,0"
                                               Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
-                                              Text="针对 SiliconFlow 等支持 JSON Mode 的站点，提升 MCP 工具调用结构稳定性。" />
+                                              Text="关闭时使用新的原生工具调用提示词与 OpenAI-compatible tools；开启后切回旧的 JSON/文本硬兼容提示词与解析链。" />
                             </ui:StackPanel>
 
                             <ui:TextBlock Grid.Row="5"
                                           Grid.Column="0"
                                           Margin="0,8,12,0"
                                           FontTypography="BodyStrong"
-                                          Text="流式输出" />
+                                          Text="JSON Mode" />
                             <ui:StackPanel Grid.Row="5"
+                                           Grid.Column="1"
+                                           Margin="0,8,0,0"
+                                           Orientation="Vertical">
+                                <ui:ToggleSwitch HorizontalAlignment="Left"
+                                                 IsChecked="{Binding Config.UseJsonMode, Mode=TwoWay}" />
+                                <ui:TextBlock Margin="0,4,0,0"
+                                              Foreground="{ui:ThemeResource TextFillColorTertiaryBrush}"
+                                              Text="作为兼容层或其他结构化输出场景的附加参数；默认原生 Function Calling 不依赖此项。" />
+                            </ui:StackPanel>
+
+                            <ui:TextBlock Grid.Row="6"
+                                          Grid.Column="0"
+                                          Margin="0,8,12,0"
+                                          FontTypography="BodyStrong"
+                                          Text="流式输出" />
+                            <ui:StackPanel Grid.Row="6"
                                            Grid.Column="1"
                                            Margin="0,8,0,0"
                                            Orientation="Vertical">
@@ -135,12 +152,12 @@
                                               Text="开启后使用 stream=true 并在聊天区启用打字机效果；关闭则一次性返回完整回复。" />
                             </ui:StackPanel>
 
-                            <ui:TextBlock Grid.Row="6"
+                            <ui:TextBlock Grid.Row="7"
                                           Grid.Column="0"
                                           Margin="0,8,12,0"
                                           FontTypography="BodyStrong"
                                           Text="MCP 可视化输出" />
-                            <ui:StackPanel Grid.Row="6"
+                            <ui:StackPanel Grid.Row="7"
                                            Grid.Column="1"
                                            Margin="0,8,0,0"
                                            Orientation="Vertical">

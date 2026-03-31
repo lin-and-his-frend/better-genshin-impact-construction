@@ -29,102 +29,191 @@ namespace BetterGenshinImpact.ViewModel.Pages;
 
 public partial class AiChatViewModel : ViewModel
 {
-    private const string DefaultSystemPrompt = """
-                                               <identity>
-                                               你是 BetterGI 内置 AI 助手。你可以通过 MCP 工具读取软件状态、控制软件功能、检索 BetterGI 官方知识，以及检索原神相关联网信息。
-                                               </identity>
+    private const string LegacyCompatibilitySystemPrompt = """
+                                                           <identity>
+                                                           你是 BetterGI 内置 AI 助手。你可以通过 MCP 工具读取软件状态、控制软件功能、检索 BetterGI 官方知识，以及检索原神相关联网信息。
+                                                           </identity>
 
-                                               <global_rules>
-                                               - 先判断用户真实意图，再决定是否调用 MCP。
-                                               - 如果不需要工具，就直接自然语言回答，不要为了“看起来更聪明”而调用工具。
-                                               - 如果已经拿到 MCP_RESULT，就直接基于结果回答，不要再次规划，不要再次发起工具调用。
-                                               - 对于执行型、排查型、配置修改型、脚本操作型、多步骤请求，如果需要 MCP，先给出简短任务列表，再继续执行。
-                                               </global_rules>
+                                                           <global_rules>
+                                                           - 先判断用户真实意图，再决定是否调用 MCP。
+                                                           - 如果不需要工具，就直接自然语言回答，不要为了“看起来更聪明”而调用工具。
+                                                           - 如果已经拿到 MCP_RESULT，先判断任务是否已经完成；如果仍缺少关键步骤、关键事实或后续执行动作，可以继续规划并发起下一轮工具调用。
+                                                           - 对于执行型、排查型、配置修改型、脚本操作型、多步骤请求，如果需要 MCP，先给出简短任务列表，再继续执行。
+                                                           </global_rules>
 
-                                               <output_contract>
-                                               - 需要 MCP 时，优先输出 JSON 对象：{"toolCalls":[{"name":"工具名","arguments":{...}}]}
-                                               - 需要“先列任务再执行”时，优先输出：{"reply":"任务列表...","toolCalls":[{"name":"工具名","arguments":{...}}]}
-                                               - reply 只写给用户看的任务列表或执行计划，不要在 reply 里写 JSON 说明、内部推理或实现细节。
-                                               - 如果是简单知识问答、FAQ、单句解释，且不需要执行操作，可以直接自然语言回答，不必强制列任务列表。
-                                               - 当不需要工具，或已拿到 MCP_RESULT 后，必须只输出给用户看的自然语言纯文本；禁止输出 JSON、代码块、toolCalls、函数名。
-                                               - 也兼容 ```mcp``` 代码块；每个代码块 JSON 结构为 {"name":"工具名","arguments":{...}}。
-                                               </output_contract>
+                                                           <output_contract>
+                                                           - 需要 MCP 时，优先输出 JSON 对象：{"toolCalls":[{"name":"工具名","arguments":{...}}]}
+                                                           - 需要“先列任务再执行”时，优先输出：{"reply":"任务列表...","toolCalls":[{"name":"工具名","arguments":{...}}]}
+                                                           - reply 只写给用户看的任务列表或执行计划，不要在 reply 里写 JSON 说明、内部推理或实现细节。
+                                                           - 如果是简单知识问答、FAQ、单句解释，且不需要执行操作，可以直接自然语言回答，不必强制列任务列表。
+                                                           - 当不需要工具，或已拿到 MCP_RESULT 后，必须只输出给用户看的自然语言纯文本；禁止输出 JSON、代码块、toolCalls、函数名。
+                                                           - 也兼容 ```mcp``` 代码块；每个代码块 JSON 结构为 {"name":"工具名","arguments":{...}}。
+                                                           </output_contract>
 
-                                               <routing_priority>
-                                               按以下优先级选择工具；命中更高优先级后，不要改走后面的工具。
+                                                           <routing_priority>
+                                                           按以下优先级选择工具；命中更高优先级后，不要改走后面的工具。
 
-                                               1. 原神知识问答
-                                               - 用户在问角色、机制、武器、圣遗物、配队、技能、命座、培养、突破、天赋、材料需求时，优先调用 bgi.web.search。
-                                               - 这类请求不要调用 bgi.script.search。
-                                               - “材料”这个词本身不等于地图追踪脚本；角色培养材料、突破材料、天赋材料通常属于知识问答。
-                                               - 例：练可莉需要什么、可莉突破材料、那维莱特天赋材料、芙宁娜圣遗物推荐。
+                                                           1. 原神知识问答
+                                                           - 用户在问角色、机制、武器、圣遗物、配队、技能、命座、培养、突破、天赋、材料需求时，优先调用 bgi.web.search。
+                                                           - 这类请求不要调用 bgi.script.search。
+                                                           - “材料”这个词本身不等于地图追踪脚本；角色培养材料、突破材料、天赋材料通常属于知识问答。
+                                                           - 例：练可莉需要什么、可莉突破材料、那维莱特天赋材料、芙宁娜圣遗物推荐。
 
-                                               2. BetterGI 官方帮助 / 下载 / FAQ / 使用指导 / 报错排查
-                                               - 优先使用官网知识工具：search_docs / get_feature_detail / get_download_info / get_faq / get_quickstart。
+                                                           2. BetterGI 官方帮助 / 下载 / FAQ / 使用指导 / 报错排查
+                                                           - 优先使用官网知识工具：search_docs / get_feature_detail / get_download_info / get_faq / get_quickstart。
 
-                                               3. 脚本介绍 / 订阅 / 导入
-                                               - 介绍某个脚本、这个脚本做什么 -> 优先 bgi.script.detail。
-                                               - 订阅/导入脚本 -> 只能调用 bgi.script.subscribe 或 search_scripts，禁止调用 bgi.script.run。
-                                               - 当用户明确要“订阅/导入脚本”时，优先直接调用 bgi.script.subscribe，不要先调用 bgi.script.search。
+                                                           3. 脚本介绍 / 订阅 / 导入
+                                                           - 介绍某个脚本、这个脚本做什么 -> 优先 bgi.script.detail。
+                                                           - 订阅/导入脚本 -> 只能调用 bgi.script.subscribe 或 search_scripts，禁止调用 bgi.script.run。
+                                                           - 当用户明确要“订阅/导入脚本”时，优先直接调用 bgi.script.subscribe，不要先调用 bgi.script.search。
 
-                                               4. 社区路线 / 采集 / 跑图 / 刷怪 / 讨伐 / 锄地等地图追踪脚本需求
-                                               - 优先调用 bgi.script.search。
-                                               - arguments.type 必须设为 pathing。
-                                               - 如果只是问角色材料需求，而不是要跑图采集，不要走这条分支。
+                                                           4. 社区路线 / 采集 / 跑图 / 刷怪 / 讨伐 / 锄地等地图追踪脚本需求
+                                                           - 优先调用 bgi.script.search。
+                                                           - arguments.type 必须设为 pathing。
+                                                           - 如果只是问角色材料需求，而不是要跑图采集，不要走这条分支。
 
-                                               5. 软件状态 / 配置 / 开关 / 语言 / 通知
-                                               - 查询状态 / 查看开关 -> bgi.get_features
-                                               - 修改开关 -> bgi.set_features
-                                               - 语言切换 -> bgi.language.get / bgi.language.set
-                                               - 自动地脉花配置 -> bgi.leyline.get / bgi.leyline.set
-                                               - 通知连通性测试 -> bgi.notification.channels / bgi.notification.test
-                                               - 一条龙 -> bgi.one_dragon.list / bgi.one_dragon.run
-                                               </routing_priority>
+                                                           5. 软件状态 / 配置 / 开关 / 语言 / 通知
+                                                           - 查询状态 / 查看开关 -> bgi.get_features
+                                                           - 修改开关 -> bgi.set_features
+                                                           - 语言切换 -> bgi.language.get / bgi.language.set
+                                                           - 自动地脉花配置 -> bgi.leyline.get / bgi.leyline.set
+                                                           - 通知连通性测试 -> bgi.notification.channels / bgi.notification.test
+                                                           - 一条龙 -> bgi.one_dragon.list / bgi.one_dragon.run
+                                                           </routing_priority>
 
-                                               <tool_rules>
-                                               - 当用户要查找脚本或脚本名不明确时，优先调用 bgi.script.search 并提供 query 关键词，避免返回大量脚本。
-                                               - 如果 bgi.script.search 返回 remote.matches（含 subscribeUri），说明本地无匹配脚本，应优先调用 bgi.script.subscribe 完成导入；再把 subscribeUri 回传给用户。
-                                               - 调用 bgi.script.run 时，必须直接复制 bgi.script.search 返回的 name 原文，不要翻译、音译或改写文件名。
-                                               - 不要在没有 query 的情况下调用 bgi.script.list。
-                                               - 调用 bgi.set_features 时，arguments 必须至少包含一个布尔字段，不要发送空对象或 null。
-                                               - 示例：{"name":"bgi.set_features","arguments":{"autoPick":true}}
-                                               - 用户说“关闭/关掉/禁用/停用”时应将对应字段设为 false；“打开/开启/启用/启动”时应将对应字段设为 true。
-                                               - 如果用户只说“关闭/打开”但未明确功能，先追问，不要调用工具。
-                                               - 用户要求“查询状态/查看开关”时必须调用 bgi.get_features。
-                                               - 用户说“全部/所有实时功能/全部开关/全开/全关”时，调用 bgi.set_features 并同时设置全部字段（autoPick/autoSkip/autoHangout/autoFishing/autoCook/autoEat/quickTeleport/mapMask/skillCd）。
-                                               </tool_rules>
+                                                           <tool_rules>
+                                                           - 当用户要查找脚本或脚本名不明确时，优先调用 bgi.script.search 并提供 query 关键词，避免返回大量脚本。
+                                                           - 如果 bgi.script.search 返回 remote.matches（含 subscribeUri），说明本地无匹配脚本，应优先调用 bgi.script.subscribe 完成导入；再把 subscribeUri 回传给用户。
+                                                           - 调用 bgi.script.run 时，必须直接复制 bgi.script.search 返回的 name 原文，不要翻译、音译或改写文件名。
+                                                           - 不要在没有 query 的情况下调用 bgi.script.list。
+                                                           - 调用 bgi.set_features 时，arguments 必须至少包含一个布尔字段，不要发送空对象或 null。
+                                                           - 示例：{"name":"bgi.set_features","arguments":{"autoPick":true}}
+                                                           - 用户说“关闭/关掉/禁用/停用”时应将对应字段设为 false；“打开/开启/启用/启动”时应将对应字段设为 true。
+                                                           - 如果用户只说“关闭/打开”但未明确功能，先追问，不要调用工具。
+                                                           - 用户要求“查询状态/查看开关”时必须调用 bgi.get_features。
+                                                           - 用户说“全部/所有实时功能/全部开关/全开/全关”时，调用 bgi.set_features 并同时设置全部字段（autoPick/autoSkip/autoHangout/autoFishing/autoCook/autoEat/quickTeleport/mapMask/skillCd）。
+                                                           </tool_rules>
 
-                                               <search_rules>
-                                               - 当 query 属于原神知识问答时，bgi.web.search 的 query 尽量包含“原神”以便消歧。
-                                               - 当 query 属于角色培养/材料需求时，优先写成“原神 角色名 培养材料 突破材料 天赋材料”。
-                                               - 如果 MCP 返回 web search disabled，提示用户到 设置 -> MCP 接口 开启“允许 MCP 联网搜索”。
-                                               </search_rules>
+                                                           <search_rules>
+                                                           - 当 query 属于原神知识问答时，bgi.web.search 的 query 尽量包含“原神”以便消歧。
+                                                           - 当 query 属于角色培养/材料需求时，优先写成“原神 角色名 培养材料 突破材料 天赋材料”。
+                                                           - 如果 MCP 返回 web search disabled，提示用户到 设置 -> MCP 接口 开启“允许 MCP 联网搜索”。
+                                                           </search_rules>
 
-                                               <examples>
-                                               <example>
-                                               用户：我想要练可莉需要什么
-                                               输出：{"toolCalls":[{"name":"bgi.web.search","arguments":{"query":"原神 可莉 培养材料 突破材料 天赋材料","maxResults":3,"provider":"auto"}}]}
-                                               </example>
-                                               <example>
-                                               用户：帮我找枫丹泡泡桔采集路线
-                                               输出：{"toolCalls":[{"name":"bgi.script.search","arguments":{"query":"枫丹 泡泡桔 采集 路线","type":"pathing","limit":5}}]}
-                                               </example>
-                                               <example>
-                                               用户：导入甜甜花采集脚本
-                                               输出：{"toolCalls":[{"name":"bgi.script.subscribe","arguments":{"query":"甜甜花","importNow":true,"limit":10}}]}
-                                               </example>
-                                               <example>
-                                               用户：现在自动拾取开了吗
-                                               输出：{"toolCalls":[{"name":"bgi.get_features","arguments":{}}]}
-                                               </example>
-                                               </examples>
+                                                           <examples>
+                                                           <example>
+                                                           用户：我想要练可莉需要什么
+                                                           输出：{"toolCalls":[{"name":"bgi.web.search","arguments":{"query":"原神 可莉 培养材料 突破材料 天赋材料","maxResults":3,"provider":"auto"}}]}
+                                                           </example>
+                                                           <example>
+                                                           用户：帮我找枫丹泡泡桔采集路线
+                                                           输出：{"toolCalls":[{"name":"bgi.script.search","arguments":{"query":"枫丹 泡泡桔 采集 路线","type":"pathing","limit":5}}]}
+                                                           </example>
+                                                           <example>
+                                                           用户：导入甜甜花采集脚本
+                                                           输出：{"toolCalls":[{"name":"bgi.script.subscribe","arguments":{"query":"甜甜花","importNow":true,"limit":10}}]}
+                                                           </example>
+                                                           <example>
+                                                           用户：现在自动拾取开了吗
+                                                           输出：{"toolCalls":[{"name":"bgi.get_features","arguments":{}}]}
+                                                           </example>
+                                                           </examples>
 
-                                               <final_note>
-                                               MCP 工具返回会以 "MCP_RESULT:" 开头的系统消息提供给你。收到 MCP_RESULT 后再给出自然语言总结。
-                                               </final_note>
-                                               """;
+                                                           <final_note>
+                                                           MCP 工具返回会以 "MCP_RESULT:" 开头的系统消息提供给你。收到 MCP_RESULT 后再给出自然语言总结。
+                                                           </final_note>
+                                                           """;
+    private const string NativeFunctionCallingSystemPrompt = """
+                                                            <identity>
+                                                            你是 BetterGI 内置 AI 助手。你可以通过 MCP 工具读取软件状态、控制软件功能、检索 BetterGI 官方知识，以及检索原神相关联网信息。
+                                                            </identity>
+
+                                                            <global_rules>
+                                                            - 当前轮次启用的是原生 Function Calling / tools。
+                                                            - 当需要工具时，必须直接发起 tool call；不要把工具调用写成 JSON、代码块、伪指令或自然语言计划。
+                                                            - 当已经拿到 MCP_RESULT 时，先判断任务是否已经完成；如果仍缺少关键步骤、关键事实或后续执行动作，可以继续调用下一批必要工具。
+                                                            - 未获得工具结果前，不要凭模型记忆输出看似确定的事实答案。
+                                                            - 只有纯闲聊、改写、翻译、润色、或仅基于用户已提供文本的总结，才允许不调用工具直接回答。
+                                                            </global_rules>
+
+                                                            <must_use_tools>
+                                                            以下请求默认必须先调用工具，不能直接回答：
+                                                            1. 原神知识问答：角色、培养、材料、突破、天赋、命座、武器、圣遗物、配队、机制、版本内容。
+                                                            2. BetterGI 官方帮助：下载、FAQ、使用指导、报错排查、功能说明。
+                                                            3. 软件状态与操作：开关状态查询、配置修改、语言切换、通知测试、一条龙、脚本检索、脚本详情、脚本订阅、脚本执行。
+                                                            4. 任何需要最新信息、外部事实、联网搜索、或读取软件当前状态的请求。
+                                                            </must_use_tools>
+
+                                                            <routing_priority>
+                                                            按以下优先级选择工具；命中更高优先级后，不要改走后面的工具。
+
+                                                            1. 原神知识问答
+                                                            - 优先调用 bgi.web.search。
+                                                            - 这类请求不要调用 bgi.script.search。
+                                                            - “材料”这个词本身不等于地图追踪脚本；角色培养材料、突破材料、天赋材料通常属于知识问答。
+                                                            - query 尽量带“原神”；角色培养/材料需求优先写成“原神 角色名 培养材料 突破材料 天赋材料”。
+
+                                                            2. BetterGI 官方帮助 / 下载 / FAQ / 使用指导 / 报错排查
+                                                            - 优先使用官网知识工具：search_docs / get_feature_detail / get_download_info / get_faq / get_quickstart。
+
+                                                            3. 脚本介绍 / 订阅 / 导入
+                                                            - 介绍某个脚本、这个脚本做什么 -> 优先 bgi.script.detail。
+                                                            - 订阅/导入脚本 -> 只能调用 bgi.script.subscribe 或 search_scripts，禁止调用 bgi.script.run。
+                                                            - 当用户明确要“订阅/导入脚本”时，优先直接调用 bgi.script.subscribe，不要先调用 bgi.script.search。
+
+                                                            4. 社区路线 / 采集 / 跑图 / 刷怪 / 讨伐 / 锄地等地图追踪脚本需求
+                                                            - 优先调用 bgi.script.search。
+                                                            - arguments.type 必须设为 pathing。
+                                                            - 如果只是问角色材料需求，而不是要跑图采集，不要走这条分支。
+
+                                                            5. 软件状态 / 配置 / 开关 / 语言 / 通知
+                                                            - 查询状态 / 查看开关 -> bgi.get_features
+                                                            - 修改开关 -> bgi.set_features
+                                                            - 语言切换 -> bgi.language.get / bgi.language.set
+                                                            - 自动地脉花配置 -> bgi.leyline.get / bgi.leyline.set
+                                                            - 通知连通性测试 -> bgi.notification.channels / bgi.notification.test
+                                                            - 一条龙 -> bgi.one_dragon.list / bgi.one_dragon.run
+                                                            </routing_priority>
+
+                                                            <tool_rules>
+                                                            - 当用户要查找脚本或脚本名不明确时，优先调用 bgi.script.search 并提供 query 关键词，避免返回大量脚本。
+                                                            - 如果 bgi.script.search 返回 remote.matches（含 subscribeUri），说明本地无匹配脚本，应优先调用 bgi.script.subscribe 完成导入；再把 subscribeUri 回传给用户。
+                                                            - 调用 bgi.script.run 时，必须直接复制 bgi.script.search 返回的 name 原文，不要翻译、音译或改写文件名。
+                                                            - 不要在没有 query 的情况下调用 bgi.script.list。
+                                                            - 调用 bgi.set_features 时，arguments 必须至少包含一个布尔字段，不要发送空对象或 null。
+                                                            - 用户说“关闭/关掉/禁用/停用”时应将对应字段设为 false；“打开/开启/启用/启动”时应将对应字段设为 true。
+                                                            - 如果用户只说“关闭/打开”但未明确功能，先追问，不要调用工具。
+                                                            - 用户要求“查询状态/查看开关”时必须调用 bgi.get_features。
+                                                            - 用户说“全部/所有实时功能/全部开关/全开/全关”时，调用 bgi.set_features 并同时设置全部字段（autoPick/autoSkip/autoHangout/autoFishing/autoCook/autoEat/quickTeleport/mapMask/skillCd）。
+                                                            - 如果 MCP 返回 web search disabled，提示用户到 设置 -> MCP 接口 开启“允许 MCP 联网搜索”。
+                                                            </tool_rules>
+
+                                                            <examples>
+                                                            <example>
+                                                            用户：我想要练可莉需要什么
+                                                            动作：直接调用 bgi.web.search，query 使用“原神 可莉 培养材料 突破材料 天赋材料”。
+                                                            </example>
+                                                            <example>
+                                                            用户：帮我找枫丹泡泡桔采集路线
+                                                            动作：直接调用 bgi.script.search，并设置 type=pathing。
+                                                            </example>
+                                                            <example>
+                                                            用户：导入甜甜花采集脚本
+                                                            动作：直接调用 bgi.script.subscribe，不要先直接自然语言回答。
+                                                            </example>
+                                                            <example>
+                                                            用户：现在自动拾取开了吗
+                                                            动作：直接调用 bgi.get_features。
+                                                            </example>
+                                                            </examples>
+
+                                                            <final_note>
+                                                            MCP 工具返回会以 "MCP_RESULT:" 开头的系统消息提供给你。收到 MCP_RESULT 后再给出自然语言总结。
+                                                            </final_note>
+                                                            """;
 
     private const int MaxAutoToolCallsPerRound = 5;
+    private const int MaxAgentExecutionRounds = 4;
     private const int MaxWebSearchToolCallsPerTurn = 2;
     private const int DefaultMaxContextChars = 80000;
     private const int DefaultMaxMcpResultChars = 8000;
@@ -141,6 +230,13 @@ public partial class AiChatViewModel : ViewModel
         "3) 仅基于已有 MCP_RESULT，用自然语言直接回答用户问题；\n" +
         "4) 若前面已经给出任务列表，不要重新规划，直接按该列表汇报已完成/未完成项与结果；\n" +
         "5) 需要给出数量时尽量结构化列点，证据不足要明确说明。";
+    private const string ToolContinuationStagePrompt =
+        "你现在处于执行中的继续规划阶段：\n" +
+        "1) 先判断当前任务是否已经完成；若已完成，直接自然语言给出结论，不要再调用工具；\n" +
+        "2) 若尚未完成，继续输出下一批最小必要工具调用；\n" +
+        "3) 优先利用已有 MCP_RESULT 推进任务，避免重复搜索同一问题；\n" +
+        "4) 若脚本搜索结果已经足够执行，优先继续订阅/运行，而不是重复搜索；\n" +
+        "5) 如果需要继续执行，先给出简短任务列表，再继续。";
     private const string NoToolFallbackPrompt =
         "你现在只能输出最终用户答复：\n" +
         "1) 严禁调用 MCP 工具；\n" +
@@ -525,149 +621,180 @@ public partial class AiChatViewModel : ViewModel
 
             LogIntentClassification(content, intent);
 
-            var payloadMessages = await BuildPayloadMessagesAsync();
-            var aiReply = await GetAiReplyAsync(payloadMessages, BuildToolPlanningConfig());
-            var reply = aiReply.RawReply;
-            var replyMessageIndex = aiReply.StreamMessageIndex;
-            LogChat("assistant_raw", reply);
+            var useLegacyToolCallCompatibility = Config.UseLegacyToolCallCompatibility;
             var toolExecutionCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var executedWebSearchQueryKeys = new HashSet<string>(StringComparer.Ordinal);
             var blockedByToolGuard = false;
             var blockedByAutoExecute = false;
             var executedMcpRound = false;
-            var planningMessageIndex = -1;
-            var toolCalls = ParseMcpToolCalls(reply);
-            toolCalls = CoerceRealtimeFeatureToolCalls(toolCalls, intent.RealtimeFeatureQueryIntent, out var coerceNotice);
-            if (!string.IsNullOrWhiteSpace(coerceNotice))
-            {
-                AddChatMessage("system", coerceNotice);
-                LogChat("system", coerceNotice);
-            }
+            var reply = string.Empty;
+            var replyMessageIndex = -1;
+            var agentRoundLimitHit = false;
 
-            toolCalls = CoercePathingPriorityToolCalls(content, toolCalls, intent.PathingPriorityIntent, out var pathingNotice);
-            if (!string.IsNullOrWhiteSpace(pathingNotice))
+            for (var agentRound = 1; agentRound <= MaxAgentExecutionRounds; agentRound++)
             {
-                AddChatMessage("system", pathingNotice);
-                LogChat("system", pathingNotice);
-            }
-
-            toolCalls = CoerceScriptSubscribeToolCalls(content, toolCalls, intent, out var subscribeNotice);
-            if (!string.IsNullOrWhiteSpace(subscribeNotice))
-            {
-                AddChatMessage("system", subscribeNotice);
-                LogChat("system", subscribeNotice);
-            }
-
-            toolCalls = CoerceGeneralKnowledgeToolCalls(content, toolCalls, intent, out var knowledgeNotice);
-            if (!string.IsNullOrWhiteSpace(knowledgeNotice))
-            {
-                AddChatMessage("system", knowledgeNotice);
-                LogChat("system", knowledgeNotice);
-            }
-
-            toolCalls = CoerceCharacterKnowledgeFollowUpToolCalls(content, toolCalls, intent, out var knowledgeFollowUpNotice);
-            if (!string.IsNullOrWhiteSpace(knowledgeFollowUpNotice))
-            {
-                AddChatMessage("system", knowledgeFollowUpNotice);
-                LogChat("system", knowledgeFollowUpNotice);
-            }
-
-            toolCalls = NormalizeAndFilterToolCalls(toolCalls, out var normalizeNotice);
-            if (!string.IsNullOrWhiteSpace(normalizeNotice))
-            {
-                AddChatMessage("system", normalizeNotice);
-                LogChat("system", normalizeNotice);
-            }
-
-            toolCalls = LimitToolCalls(toolCalls, out var toolLimitNotice);
-            if (!string.IsNullOrWhiteSpace(toolLimitNotice))
-            {
-                AddChatMessage("system", toolLimitNotice);
-                LogChat("system", toolLimitNotice);
-            }
-
-            toolCalls = ExpandScriptRunCallsForSerial(toolCalls, out var serialRunNotice);
-            if (!string.IsNullOrWhiteSpace(serialRunNotice))
-            {
-                AddChatMessage("system", serialRunNotice);
-                LogChat("system", serialRunNotice);
-            }
-
-            if (toolCalls.Count == 0 && TryBuildFallbackToolCalls(content, intent, out var fallbackCalls))
-            {
-                toolCalls = fallbackCalls;
-                LogChat("system", $"检测到明确操作意图，已自动调用 {fallbackCalls[0].Name}。");
-            }
-
-            if (toolCalls.Count == 0 && TryBuildMandatoryWorkflowToolCalls(content, intent, out var workflowCalls))
-            {
-                toolCalls = workflowCalls;
-                LogChat("system", $"未检测到可执行工具调用，已按工作流补充 MCP 调用：{workflowCalls[0].Name}。");
-            }
-
-            toolCalls = ApplyToolExecutionGuards(toolCalls, toolExecutionCounts, executedWebSearchQueryKeys, out var guardNotice);
-            if (!string.IsNullOrWhiteSpace(guardNotice))
-            {
-                blockedByToolGuard = true;
-                AddChatMessage("system", guardNotice);
-                LogChat("system", guardNotice);
-            }
-
-            if (toolCalls.Count > 0 && ShouldShowExecutionPlanForToolCalls(intent, toolCalls, reply))
-            {
-                var planningReply = BuildVisibleExecutionPlanReply(reply, toolCalls);
-                if (!string.IsNullOrWhiteSpace(planningReply))
+                var payloadMessages = (await BuildPayloadMessagesAsync(useNativeFunctionCalling: !useLegacyToolCallCompatibility)).ToList();
+                if (agentRound > 1 || executedMcpRound)
                 {
-                    planningMessageIndex = UpsertAssistantPlanningMessage(replyMessageIndex, planningReply);
-                    if (planningMessageIndex >= 0)
+                    payloadMessages.Add(new AiChatMessage("system", ToolContinuationStagePrompt));
+                }
+
+                var toolPlanningReply = await GetToolPlanningReplyAsync(payloadMessages, useLegacyToolCallCompatibility);
+                reply = toolPlanningReply.RawReply;
+                replyMessageIndex = toolPlanningReply.StreamMessageIndex;
+                LogChat("assistant_raw", reply);
+
+                var planningMessageIndex = -1;
+                var toolCalls = toolPlanningReply.ToolCalls;
+                toolCalls = CoerceRealtimeFeatureToolCalls(toolCalls, intent.RealtimeFeatureQueryIntent, out var coerceNotice);
+                if (!string.IsNullOrWhiteSpace(coerceNotice))
+                {
+                    AddChatMessage("system", coerceNotice);
+                    LogChat("system", coerceNotice);
+                }
+
+                toolCalls = CoercePathingPriorityToolCalls(content, toolCalls, intent.PathingPriorityIntent, out var pathingNotice);
+                if (!string.IsNullOrWhiteSpace(pathingNotice))
+                {
+                    AddChatMessage("system", pathingNotice);
+                    LogChat("system", pathingNotice);
+                }
+
+                toolCalls = CoerceScriptSubscribeToolCalls(content, toolCalls, intent, out var subscribeNotice);
+                if (!string.IsNullOrWhiteSpace(subscribeNotice))
+                {
+                    AddChatMessage("system", subscribeNotice);
+                    LogChat("system", subscribeNotice);
+                }
+
+                toolCalls = CoerceGeneralKnowledgeToolCalls(content, toolCalls, intent, out var knowledgeNotice);
+                if (!string.IsNullOrWhiteSpace(knowledgeNotice))
+                {
+                    AddChatMessage("system", knowledgeNotice);
+                    LogChat("system", knowledgeNotice);
+                }
+
+                toolCalls = CoerceCharacterKnowledgeFollowUpToolCalls(content, toolCalls, intent, out var knowledgeFollowUpNotice);
+                if (!string.IsNullOrWhiteSpace(knowledgeFollowUpNotice))
+                {
+                    AddChatMessage("system", knowledgeFollowUpNotice);
+                    LogChat("system", knowledgeFollowUpNotice);
+                }
+
+                toolCalls = NormalizeAndFilterToolCalls(toolCalls, out var normalizeNotice);
+                if (!string.IsNullOrWhiteSpace(normalizeNotice))
+                {
+                    AddChatMessage("system", normalizeNotice);
+                    LogChat("system", normalizeNotice);
+                }
+
+                toolCalls = LimitToolCalls(toolCalls, out var toolLimitNotice);
+                if (!string.IsNullOrWhiteSpace(toolLimitNotice))
+                {
+                    AddChatMessage("system", toolLimitNotice);
+                    LogChat("system", toolLimitNotice);
+                }
+
+                toolCalls = ExpandScriptRunCallsForSerial(toolCalls, out var serialRunNotice);
+                if (!string.IsNullOrWhiteSpace(serialRunNotice))
+                {
+                    AddChatMessage("system", serialRunNotice);
+                    LogChat("system", serialRunNotice);
+                }
+
+                if (toolCalls.Count == 0 && !executedMcpRound && TryBuildFallbackToolCalls(content, intent, out var fallbackCalls))
+                {
+                    toolCalls = fallbackCalls;
+                    LogChat("system", $"检测到明确操作意图，已自动调用 {fallbackCalls[0].Name}。");
+                }
+
+                if (toolCalls.Count == 0 && !executedMcpRound && TryBuildMandatoryWorkflowToolCalls(content, intent, out var workflowCalls))
+                {
+                    toolCalls = workflowCalls;
+                    LogChat("system", $"未检测到可执行工具调用，已按工作流补充 MCP 调用：{workflowCalls[0].Name}。");
+                }
+
+                toolCalls = ApplyToolExecutionGuards(toolCalls, toolExecutionCounts, executedWebSearchQueryKeys, out var guardNotice);
+                if (!string.IsNullOrWhiteSpace(guardNotice))
+                {
+                    blockedByToolGuard = true;
+                    AddChatMessage("system", guardNotice);
+                    LogChat("system", guardNotice);
+                }
+
+                if (toolCalls.Count > 0 && ShouldShowExecutionPlanForToolCalls(intent, toolCalls, reply))
+                {
+                    var planningReply = BuildVisibleExecutionPlanReply(reply, toolCalls);
+                    if (!string.IsNullOrWhiteSpace(planningReply))
                     {
-                        LogChat("assistant_plan", planningReply);
+                        planningMessageIndex = UpsertAssistantPlanningMessage(replyMessageIndex, planningReply);
+                        if (planningMessageIndex >= 0)
+                        {
+                            LogChat("assistant_plan", planningReply);
+                            replyMessageIndex = -1;
+                        }
+                    }
+                    else if (replyMessageIndex >= 0)
+                    {
+                        RemoveChatMessageAt(replyMessageIndex);
                         replyMessageIndex = -1;
                     }
                 }
-                else if (replyMessageIndex >= 0)
+                else if (toolCalls.Count > 0 && replyMessageIndex >= 0)
                 {
                     RemoveChatMessageAt(replyMessageIndex);
                     replyMessageIndex = -1;
                 }
-            }
-            else if (toolCalls.Count > 0 && replyMessageIndex >= 0)
-            {
-                RemoveChatMessageAt(replyMessageIndex);
-                replyMessageIndex = -1;
-            }
 
-            if (toolCalls.Count > 0 && !Config.AutoExecuteMcpToolCalls)
-            {
-                var blockedToolNames = toolCalls.Select(call => call.Name)
-                    .Where(name => !string.IsNullOrWhiteSpace(name))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .Take(4)
-                    .ToArray();
-                var blockedNames = string.Join(", ", blockedToolNames);
-                var notice = string.IsNullOrWhiteSpace(blockedNames)
-                    ? "已拦截 AI 生成的 MCP 自动调用。若需自动执行，请在 AI 设置中开启“自动执行 MCP 工具调用”。"
-                    : $"已拦截 AI 生成的 MCP 自动调用：{blockedNames}。若需自动执行，请在 AI 设置中开启“自动执行 MCP 工具调用”。";
-                AddChatMessage("system", notice);
-                LogChat("system", notice);
-                if (planningMessageIndex >= 0)
+                if (toolCalls.Count == 0)
                 {
-                    StatusText = "已拦截自动执行";
-                    return;
+                    if (executedMcpRound && replyMessageIndex >= 0)
+                    {
+                        RemoveChatMessageAt(replyMessageIndex);
+                        replyMessageIndex = -1;
+                    }
+
+                    break;
                 }
 
-                blockedByAutoExecute = true;
-                reply = BuildAutoExecuteBlockedReply(blockedToolNames);
-                toolCalls = [];
-            }
+                if (!Config.AutoExecuteMcpToolCalls)
+                {
+                    var blockedToolNames = toolCalls.Select(call => call.Name)
+                        .Where(name => !string.IsNullOrWhiteSpace(name))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .Take(4)
+                        .ToArray();
+                    var blockedNames = string.Join(", ", blockedToolNames);
+                    var notice = string.IsNullOrWhiteSpace(blockedNames)
+                        ? "已拦截 AI 生成的 MCP 自动调用。若需自动执行，请在 AI 设置中开启“自动执行 MCP 工具调用”。"
+                        : $"已拦截 AI 生成的 MCP 自动调用：{blockedNames}。若需自动执行，请在 AI 设置中开启“自动执行 MCP 工具调用”。";
+                    AddChatMessage("system", notice);
+                    LogChat("system", notice);
+                    if (planningMessageIndex >= 0)
+                    {
+                        StatusText = "已拦截自动执行";
+                        return;
+                    }
 
-            if (toolCalls.Count > 0)
-            {
+                    blockedByAutoExecute = true;
+                    reply = BuildAutoExecuteBlockedReply(blockedToolNames);
+                    break;
+                }
+
                 RecordPlannedToolCalls(toolCalls, toolExecutionCounts);
                 RecordExecutedWebSearchQueries(toolCalls, executedWebSearchQueryKeys);
                 var executedCalls = await ExecuteMcpToolCallsAsync(toolCalls);
-                executedMcpRound = executedCalls.Count > 0;
-                toolCalls = [];
+                executedMcpRound = executedMcpRound || executedCalls.Count > 0;
+                var primaryFailureReason = TryGetCriticalExecutionFailureReason(executedCalls);
+                if (ShouldStopAgentExecutionAfterFailure(primaryFailureReason))
+                {
+                    var stopNotice = BuildAgentFailureStopNotice(primaryFailureReason!);
+                    AddChatMessage("system", stopNotice);
+                    LogChat("system", stopNotice);
+                    reply = BuildDeterministicTaskFailureReply(content, primaryFailureReason!);
+                    replyMessageIndex = -1;
+                    break;
+                }
 
                 var characterAutomationSearchCalls = BuildCharacterAutomationSearchCalls(content, intent, executedCalls);
                 if (characterAutomationSearchCalls.Count > 0)
@@ -692,16 +819,104 @@ public partial class AiChatViewModel : ViewModel
 
                         var automationRunResults = await ExecuteMcpToolCallsAsync(characterAutomationRunCalls);
                         executedMcpRound = executedMcpRound || automationRunResults.Count > 0;
+                        var automationFailureReason = TryGetCriticalExecutionFailureReason(automationRunResults);
+                        if (ShouldStopAgentExecutionAfterFailure(automationFailureReason))
+                        {
+                            var stopNotice = BuildAgentFailureStopNotice(automationFailureReason!);
+                            AddChatMessage("system", stopNotice);
+                            LogChat("system", stopNotice);
+                            reply = BuildDeterministicTaskFailureReply(content, automationFailureReason!);
+                            replyMessageIndex = -1;
+                            break;
+                        }
                     }
                 }
 
+                var autoContinuationCalls = BuildAutoContinuationToolCalls(
+                    content,
+                    intent,
+                    executedCalls,
+                    allowMaterialWorkflowContinuation: ShouldAutoPrepareCharacterMaterialsFromHistory(content, intent),
+                    out var autoContinuationNotice);
+                if (!string.IsNullOrWhiteSpace(autoContinuationNotice))
+                {
+                    AddChatMessage("system", autoContinuationNotice);
+                    LogChat("system", autoContinuationNotice);
+                }
+
+                if (autoContinuationCalls.Count > 0)
+                {
+                    autoContinuationCalls = ExpandScriptRunCallsForSerial(autoContinuationCalls, out var autoContinuationSerialNotice);
+                    if (!string.IsNullOrWhiteSpace(autoContinuationSerialNotice))
+                    {
+                        AddChatMessage("system", autoContinuationSerialNotice);
+                        LogChat("system", autoContinuationSerialNotice);
+                    }
+
+                    var autoPlan = BuildVisibleExecutionPlanReply(string.Empty, autoContinuationCalls);
+                    if (!string.IsNullOrWhiteSpace(autoPlan))
+                    {
+                        AddChatMessage("assistant", autoPlan);
+                        LogChat("assistant_plan", autoPlan);
+                    }
+
+                    RecordPlannedToolCalls(autoContinuationCalls, toolExecutionCounts);
+                    RecordExecutedWebSearchQueries(autoContinuationCalls, executedWebSearchQueryKeys);
+                    var autoContinuationResults = await ExecuteMcpToolCallsAsync(autoContinuationCalls);
+                    executedMcpRound = executedMcpRound || autoContinuationResults.Count > 0;
+                    var continuationFailureReason = TryGetCriticalExecutionFailureReason(autoContinuationResults);
+                    if (ShouldStopAgentExecutionAfterFailure(continuationFailureReason))
+                    {
+                        var stopNotice = BuildAgentFailureStopNotice(continuationFailureReason!);
+                        AddChatMessage("system", stopNotice);
+                        LogChat("system", stopNotice);
+                        reply = BuildDeterministicTaskFailureReply(content, continuationFailureReason!);
+                        replyMessageIndex = -1;
+                        break;
+                    }
+                }
+
+                var currentTurnFailureReason = TryGetCurrentTurnMcpFailureReason();
+                if (ShouldStopAgentExecutionAfterFailure(currentTurnFailureReason))
+                {
+                    var stopNotice = BuildAgentFailureStopNotice(currentTurnFailureReason!);
+                    AddChatMessage("system", stopNotice);
+                    LogChat("system", stopNotice);
+                    break;
+                }
+
+                reply = string.Empty;
+                replyMessageIndex = -1;
+
+                if (agentRound >= MaxAgentExecutionRounds)
+                {
+                    agentRoundLimitHit = true;
+                    break;
+                }
+            }
+
+            if (agentRoundLimitHit)
+            {
+                var roundLimitNotice = $"已达到自动执行轮次上限（{MaxAgentExecutionRounds} 轮），将基于当前结果整理结论。";
+                AddChatMessage("system", roundLimitNotice);
+                LogChat("system", roundLimitNotice);
+            }
+
+            var finalFailureReason = TryGetCurrentTurnMcpFailureReason();
+            if (!string.IsNullOrWhiteSpace(finalFailureReason) && executedMcpRound)
+            {
+                reply = BuildDeterministicTaskFailureReply(content, finalFailureReason);
+                replyMessageIndex = -1;
+            }
+            else if (executedMcpRound)
+            {
                 StatusText = "AI 正在整理答案...";
                 LogChat("system", "进入最终答复阶段：禁用 MCP 调用，禁用 JSON 响应格式。");
                 var finalPayloadMessages = (await BuildPayloadMessagesAsync()).ToList();
                 finalPayloadMessages.Add(new AiChatMessage("system", FinalAnswerStagePrompt));
-                aiReply = await GetAiReplyAsync(finalPayloadMessages, BuildFinalAnswerConfig());
-                reply = aiReply.RawReply;
-                replyMessageIndex = aiReply.StreamMessageIndex;
+                var finalAiReply = await GetAiReplyAsync(finalPayloadMessages, BuildFinalAnswerConfig());
+                reply = finalAiReply.RawReply;
+                replyMessageIndex = finalAiReply.StreamMessageIndex;
                 LogChat("assistant_raw", reply);
                 if (IsInvalidFinalAnswerReply(reply))
                 {
@@ -2413,7 +2628,13 @@ public partial class AiChatViewModel : ViewModel
             return true;
         }
 
-        if (intent.PathingPriorityIntent || IsPathingPriorityIntentByKeyword(userText))
+        if (TryBuildCharacterAutomationWorkflowToolCalls(userText, intent, out var characterAutomationCalls))
+        {
+            calls = characterAutomationCalls;
+            return true;
+        }
+
+        if (intent.PathingPriorityIntent)
         {
             var pathingQuery = BuildPathingSearchQuery(ResolvePathingSourceText(userText));
             if (!string.IsNullOrWhiteSpace(pathingQuery))
@@ -2444,20 +2665,16 @@ public partial class AiChatViewModel : ViewModel
             }
         }
 
-        if (!IsGeneralKnowledgeQuery(userText))
+        if (!IsCharacterKnowledgeQuery(userText) &&
+            !IsGeneralKnowledgeQuery(userText))
         {
             return false;
         }
 
-        var knowledgeQuery = BuildDocSearchQuery(userText);
+        var knowledgeQuery = BuildKnowledgeWebSearchQuery(userText);
         if (string.IsNullOrWhiteSpace(knowledgeQuery))
         {
             return false;
-        }
-
-        if (!knowledgeQuery.Contains("原神", StringComparison.OrdinalIgnoreCase))
-        {
-            knowledgeQuery = $"原神 {knowledgeQuery}";
         }
 
         var webArgs = new JsonObject
@@ -3985,6 +4202,137 @@ public partial class AiChatViewModel : ViewModel
             .ToArray();
     }
 
+    private static IReadOnlyList<McpToolCall> BuildAutoContinuationToolCalls(
+        string userText,
+        IntentClassification intent,
+        IReadOnlyList<ExecutedMcpToolCall> executedCalls,
+        bool allowMaterialWorkflowContinuation,
+        out string? notice)
+    {
+        notice = null;
+        if (executedCalls.Count == 0)
+        {
+            return [];
+        }
+
+        var isPathingExecutionRequest = intent.PathingPriorityIntent || allowMaterialWorkflowContinuation;
+        if (!isPathingExecutionRequest)
+        {
+            return [];
+        }
+
+        foreach (var executed in executedCalls)
+        {
+            if (!string.Equals(executed.Name, "bgi.script.search", StringComparison.OrdinalIgnoreCase) ||
+                executed.Result.IsError)
+            {
+                continue;
+            }
+
+            if (!TryBuildScriptExecutionCallsFromSearchResult(executed.Result.Content, out var calls) || calls.Count == 0)
+            {
+                continue;
+            }
+
+            notice = "已根据脚本搜索结果自动规划后续执行步骤（订阅/运行）。";
+            return calls;
+        }
+
+        return [];
+    }
+
+    private bool TryBuildCharacterAutomationWorkflowToolCalls(string userText, IntentClassification intent, out IReadOnlyList<McpToolCall> calls)
+    {
+        calls = Array.Empty<McpToolCall>();
+        if (!ShouldAutoPrepareCharacterMaterialsFromHistory(userText, intent))
+        {
+            return false;
+        }
+
+        var queries = ExtractAutomatableMaterialQueriesFromRecentHistory(userText);
+        if (queries.Count == 0)
+        {
+            return false;
+        }
+
+        calls = queries
+            .Select(query => new McpToolCall(
+                "bgi.script.search",
+                new JsonObject
+                {
+                    ["query"] = query,
+                    ["type"] = "pathing",
+                    ["limit"] = 1
+                }.ToJsonString()))
+            .ToArray();
+        return calls.Count > 0;
+    }
+
+    private bool ShouldAutoPrepareCharacterMaterialsFromHistory(string userText, IntentClassification intent)
+    {
+        if (string.IsNullOrWhiteSpace(userText) ||
+            !HasRecentCharacterKnowledgeResult())
+        {
+            return false;
+        }
+
+        if (intent.PathingPriorityIntent ||
+            intent.ScriptSubscribeIntent ||
+            intent.ScriptDetailIntent ||
+            intent.DocHelpIntent ||
+            intent.DownloadIntent ||
+            intent.StatusQueryIntent ||
+            intent.RealtimeFeatureQueryIntent ||
+            intent.AllFeaturesRequest ||
+            !string.IsNullOrWhiteSpace(intent.FeatureKey) ||
+            intent.DesiredFeatureValue.HasValue)
+        {
+            return false;
+        }
+
+        return ContainsAny(userText, "处理", "去处理", "材料计划", "计划", "准备", "收集", "自动", "帮我处理", "能做的部分", "继续");
+    }
+
+    private IReadOnlyList<string> ExtractAutomatableMaterialQueriesFromRecentHistory(string userText)
+    {
+        const int maxRecentMcpMessages = 16;
+        var remainingRecentMcpMessages = maxRecentMcpMessages;
+        var queries = new List<string>();
+
+        for (var i = Messages.Count - 1; i >= 0 && remainingRecentMcpMessages > 0; i--)
+        {
+            var message = Messages[i];
+            if (!message.IsMcp || string.IsNullOrWhiteSpace(message.Content))
+            {
+                continue;
+            }
+
+            if (!message.Content.Contains("bgi.web.search", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            remainingRecentMcpMessages--;
+            var jsonBody = TryExtractMcpJsonBody(message.Content);
+            if (string.IsNullOrWhiteSpace(jsonBody))
+            {
+                continue;
+            }
+
+            queries.AddRange(ExtractAutomatableMaterialQueries(userText, jsonBody));
+            if (queries.Count >= 2)
+            {
+                break;
+            }
+        }
+
+        return queries
+            .Where(query => !string.IsNullOrWhiteSpace(query))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(2)
+            .ToArray();
+    }
+
     private static bool ShouldAutoPrepareCharacterMaterials(string userText, IntentClassification intent)
     {
         if (string.IsNullOrWhiteSpace(userText) ||
@@ -4002,7 +4350,7 @@ public partial class AiChatViewModel : ViewModel
             return false;
         }
 
-        return ContainsAny(userText, "准备", "收集", "直接运行", "直接执行", "自动", "能做的部分", "帮我处理");
+        return ContainsAny(userText, "准备", "收集", "直接运行", "直接执行", "自动", "能做的部分", "帮我处理", "处理", "去处理", "材料计划", "计划");
     }
 
     private bool HasRecentCharacterKnowledgeResult()
@@ -4110,7 +4458,7 @@ public partial class AiChatViewModel : ViewModel
 
         if (name.EndsWith("绘卷", StringComparison.OrdinalIgnoreCase))
         {
-            return "绘卷";
+            return null;
         }
 
         if (ContainsAny(name, "蘑菇", "花", "果", "草", "矿", "鱼"))
@@ -4118,7 +4466,7 @@ public partial class AiChatViewModel : ViewModel
             return name;
         }
 
-        return name.EndsWith("绘卷", StringComparison.OrdinalIgnoreCase) ? "绘卷" : null;
+        return null;
     }
 
     private static bool TryBuildScriptExecutionCallsFromSearchResult(string searchContent, out List<McpToolCall> calls)
@@ -5286,6 +5634,85 @@ public partial class AiChatViewModel : ViewModel
         return null;
     }
 
+    private static string? TryGetCriticalExecutionFailureReason(IReadOnlyList<ExecutedMcpToolCall> executedCalls)
+    {
+        if (executedCalls.Count == 0)
+        {
+            return null;
+        }
+
+        foreach (var executed in executedCalls)
+        {
+            if (!executed.Result.IsError)
+            {
+                continue;
+            }
+
+            var reason = executed.Result.Content?.Trim();
+            if (!string.IsNullOrWhiteSpace(reason))
+            {
+                return reason;
+            }
+
+            var rawJson = executed.Result.RawJson?.Trim();
+            if (!string.IsNullOrWhiteSpace(rawJson))
+            {
+                return rawJson;
+            }
+
+            return "MCP 返回调用失败";
+        }
+
+        return null;
+    }
+
+    private static bool ShouldStopAgentExecutionAfterFailure(string? failureReason)
+    {
+        if (string.IsNullOrWhiteSpace(failureReason))
+        {
+            return false;
+        }
+
+        return failureReason.Contains("本地脚本仓库不存在", StringComparison.OrdinalIgnoreCase) ||
+               failureReason.Contains("未找到地图追踪脚本", StringComparison.OrdinalIgnoreCase) ||
+               failureReason.Contains("远程脚本仓库不可用", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string BuildAgentFailureStopNotice(string failureReason)
+    {
+        if (failureReason.Contains("本地脚本仓库不存在", StringComparison.OrdinalIgnoreCase))
+        {
+            return "检测到订阅脚本前置条件未满足：本地脚本仓库尚未初始化。已停止继续自动规划，改为基于当前结果直接汇报。";
+        }
+
+        if (failureReason.Contains("未找到地图追踪脚本", StringComparison.OrdinalIgnoreCase))
+        {
+            return "检测到目标脚本尚未成功导入，本轮停止继续自动规划，改为基于当前结果直接汇报。";
+        }
+
+        return $"检测到 MCP 调用失败：{failureReason}。本轮停止继续自动规划，改为基于当前结果直接汇报。";
+    }
+
+    private string BuildDeterministicTaskFailureReply(string userText, string failureReason)
+    {
+        if (failureReason.Contains("本地脚本仓库不存在", StringComparison.OrdinalIgnoreCase))
+        {
+            return "我已经找到可自动处理的材料采集脚本，但当前无法继续执行，因为本地脚本仓库尚未初始化。远程订阅列表地址本身是正常可用的，卡住的点在本地仓库未准备好。\n\n请先到“脚本仓库”页更新或导入本地脚本仓库，然后再让我继续执行；更新完成后，我就可以继续尝试订阅并运行对应的材料采集脚本。";
+        }
+
+        if (failureReason.Contains("未找到地图追踪脚本", StringComparison.OrdinalIgnoreCase))
+        {
+            return "我已经尝试继续执行材料采集任务，但目标地图追踪脚本当前尚未成功导入到本地，所以无法直接运行。\n\n建议先完成脚本仓库更新或脚本订阅，再让我继续执行后续采集步骤。";
+        }
+
+        if (failureReason.Contains("远程脚本仓库不可用", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"我已经开始为“{userText}”规划自动处理步骤，但远程脚本仓库当前不可用，因此无法继续自动订阅或执行脚本。\n\n当前失败原因：{failureReason}";
+        }
+
+        return $"我已经开始为“{userText}”执行自动处理，但本轮在工具调用阶段失败，暂时无法继续。\n\n当前失败原因：{failureReason}";
+    }
+
     private static bool LooksLikeSuccessClaim(string reply)
     {
         if (string.IsNullOrWhiteSpace(reply))
@@ -5359,6 +5786,35 @@ public partial class AiChatViewModel : ViewModel
         }
 
         return null;
+    }
+
+    private static string? TryExtractMcpJsonBody(string mcpMessage)
+    {
+        if (string.IsNullOrWhiteSpace(mcpMessage))
+        {
+            return null;
+        }
+
+        var splitIndex = mcpMessage.IndexOf('\n');
+        if (splitIndex < 0 || splitIndex + 1 >= mcpMessage.Length)
+        {
+            return null;
+        }
+
+        var body = DecodeUnicodeEscapes(mcpMessage[(splitIndex + 1)..]).Trim();
+        if (body.Length == 0)
+        {
+            return null;
+        }
+
+        var normalized = NormalizeJsonPrefix(body).Trim();
+        if (normalized.StartsWith("{", StringComparison.Ordinal))
+        {
+            return normalized;
+        }
+
+        var firstObject = ExtractJsonObjects(normalized).FirstOrDefault();
+        return string.IsNullOrWhiteSpace(firstObject) ? null : firstObject.Trim();
     }
 
     private static string? TryGetStringProperty(JsonElement element, string propertyName)
@@ -5703,6 +6159,172 @@ public partial class AiChatViewModel : ViewModel
         return true;
     }
 
+    private async Task<ToolPlanningReplyResult> GetToolPlanningReplyAsync(
+        IReadOnlyList<AiChatMessage> payloadMessages,
+        bool useLegacyToolCallCompatibility)
+    {
+        if (useLegacyToolCallCompatibility)
+        {
+            var compatibilityReply = await GetAiReplyAsync(payloadMessages, BuildToolPlanningConfig(useNativeFunctionCalling: false));
+            return new ToolPlanningReplyResult(
+                compatibilityReply.RawReply,
+                compatibilityReply.StreamMessageIndex,
+                ParseMcpToolCalls(compatibilityReply.RawReply));
+        }
+
+        var toolDefinitions = BuildOpenAiCompatibleToolDefinitions();
+        if (toolDefinitions.Count == 0)
+        {
+            var fallbackReply = await GetAiReplyAsync(payloadMessages, BuildToolPlanningConfig(useNativeFunctionCalling: false));
+            return new ToolPlanningReplyResult(
+                fallbackReply.RawReply,
+                fallbackReply.StreamMessageIndex,
+                ParseMcpToolCalls(fallbackReply.RawReply));
+        }
+
+        try
+        {
+            using var cts = new CancellationTokenSource(DefaultAiRequestTimeout);
+            var completion = await _chatService.GetChatCompletionResultAsync(
+                    BuildToolPlanningConfig(useNativeFunctionCalling: true),
+                    payloadMessages,
+                    cts.Token,
+                    toolDefinitions)
+                .ConfigureAwait(false);
+
+            return new ToolPlanningReplyResult(
+                completion.Content ?? string.Empty,
+                -1,
+                ConvertToolCalls(completion.ToolCalls));
+        }
+        catch (Exception ex) when (ShouldSurfaceNativeFunctionCallingCompatibilityError(ex.Message))
+        {
+            var reason = FormatAiFailureReason(ex.Message);
+            throw new InvalidOperationException(
+                $"当前模型或服务端暂不支持原生 Function Calling。若需兼容旧模型或旧站点，请在 AI 设置中开启“工具调用硬兼容层”后重试。原始原因：{reason}");
+        }
+    }
+
+    private IReadOnlyList<AiToolDefinition> BuildOpenAiCompatibleToolDefinitions()
+    {
+        if (McpTools.Count == 0)
+        {
+            return [];
+        }
+
+        var definitions = new List<AiToolDefinition>(McpTools.Count);
+        foreach (var tool in McpTools)
+        {
+            if (string.IsNullOrWhiteSpace(tool.Name))
+            {
+                continue;
+            }
+
+            definitions.Add(new AiToolDefinition
+            {
+                Name = tool.Name.Trim(),
+                Description = tool.Description?.Trim() ?? string.Empty,
+                Parameters = BuildToolParametersNode(tool.InputSchema)
+            });
+        }
+
+        return definitions;
+    }
+
+    private static JsonNode BuildToolParametersNode(string? inputSchema)
+    {
+        if (!string.IsNullOrWhiteSpace(inputSchema))
+        {
+            try
+            {
+                if (JsonNode.Parse(inputSchema) is JsonObject schemaObject)
+                {
+                    if (!schemaObject.ContainsKey("type"))
+                    {
+                        schemaObject["type"] = "object";
+                    }
+
+                    if (!schemaObject.ContainsKey("properties"))
+                    {
+                        schemaObject["properties"] = new JsonObject();
+                    }
+
+                    return schemaObject;
+                }
+            }
+            catch (JsonException)
+            {
+            }
+        }
+
+        return new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject()
+        };
+    }
+
+    private static IReadOnlyList<McpToolCall> ConvertToolCalls(IReadOnlyList<AiToolCall> toolCalls)
+    {
+        if (toolCalls.Count == 0)
+        {
+            return [];
+        }
+
+        var converted = new List<McpToolCall>(toolCalls.Count);
+        foreach (var toolCall in toolCalls)
+        {
+            if (string.IsNullOrWhiteSpace(toolCall.Name))
+            {
+                continue;
+            }
+
+            converted.Add(new McpToolCall(
+                toolCall.Name.Trim(),
+                NormalizeToolCallArguments(toolCall.ArgumentsJson)));
+        }
+
+        return converted;
+    }
+
+    private static string NormalizeToolCallArguments(string? argumentsJson)
+    {
+        var normalized = argumentsJson?.Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? "{}" : normalized;
+    }
+
+    private static bool ShouldSurfaceNativeFunctionCallingCompatibilityError(string? message)
+    {
+        var text = message?.Trim();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        var lowered = text.ToLowerInvariant();
+        var mentionsFunctionCalling =
+            lowered.Contains("tool_call", StringComparison.Ordinal) ||
+            lowered.Contains("toolcalls", StringComparison.Ordinal) ||
+            lowered.Contains("tools", StringComparison.Ordinal) ||
+            lowered.Contains("tool_choice", StringComparison.Ordinal) ||
+            lowered.Contains("function calling", StringComparison.Ordinal) ||
+            lowered.Contains("function_call", StringComparison.Ordinal) ||
+            lowered.Contains("functions", StringComparison.Ordinal);
+
+        if (!mentionsFunctionCalling)
+        {
+            return false;
+        }
+
+        return lowered.Contains("not support", StringComparison.Ordinal) ||
+               lowered.Contains("not supported", StringComparison.Ordinal) ||
+               lowered.Contains("unsupported", StringComparison.Ordinal) ||
+               lowered.Contains("unknown", StringComparison.Ordinal) ||
+               lowered.Contains("invalid", StringComparison.Ordinal) ||
+               lowered.Contains("unexpected", StringComparison.Ordinal) ||
+               lowered.Contains("unrecognized", StringComparison.Ordinal);
+    }
+
     private async Task<AiReplyResult> GetAiReplyAsync(IReadOnlyList<AiChatMessage> payloadMessages, AiConfig? runtimeConfig = null)
     {
         var requestConfig = runtimeConfig ?? Config;
@@ -5823,9 +6445,11 @@ public partial class AiChatViewModel : ViewModel
         }
     }
 
-    private AiConfig BuildToolPlanningConfig()
+    private AiConfig BuildToolPlanningConfig(bool useNativeFunctionCalling)
     {
-        return BuildStageConfig(useJsonMode: true, useStreamingResponse: Config.UseStreamingResponse);
+        return BuildStageConfig(
+            useJsonMode: useNativeFunctionCalling ? false : Config.UseJsonMode,
+            useStreamingResponse: useNativeFunctionCalling ? false : Config.UseStreamingResponse);
     }
 
     private AiConfig BuildFinalAnswerConfig()
@@ -5874,6 +6498,7 @@ public partial class AiChatViewModel : ViewModel
             ApiKey = Config.ApiKey,
             Model = Config.Model,
             UseJsonMode = useJsonMode,
+            UseLegacyToolCallCompatibility = Config.UseLegacyToolCallCompatibility,
             UseStreamingResponse = useStreamingResponse,
             AutoExecuteMcpToolCalls = false,
             MaxContextChars = NormalizeMaxContextChars(Config.MaxContextChars)
@@ -6476,10 +7101,10 @@ public partial class AiChatViewModel : ViewModel
         return buffer.ToString();
     }
 
-    private async Task<IReadOnlyList<AiChatMessage>> BuildPayloadMessagesAsync()
+    private async Task<IReadOnlyList<AiChatMessage>> BuildPayloadMessagesAsync(bool useNativeFunctionCalling = false)
     {
         var options = CaptureCompressionRuntimeOptions();
-        var systemPrompt = BuildSystemPrompt();
+        var systemPrompt = BuildSystemPrompt(useNativeFunctionCalling);
         var sourceMessages = CapturePayloadSourceMessages();
         var maxContextChars = NormalizeMaxContextChars(Config.MaxContextChars);
         return await Task.Run(async () =>
@@ -7038,17 +7663,25 @@ public partial class AiChatViewModel : ViewModel
         return value > 0 ? value : DefaultMaxContextChars;
     }
 
-    private string BuildSystemPrompt()
+    private string BuildSystemPrompt(bool useNativeFunctionCalling = false)
     {
+        var basePrompt = useNativeFunctionCalling
+            ? NativeFunctionCallingSystemPrompt
+            : LegacyCompatibilitySystemPrompt;
+
         if (McpTools.Count == 0)
         {
-            return DefaultSystemPrompt;
+            return basePrompt;
         }
 
-        var builder = new StringBuilder(DefaultSystemPrompt);
+        var builder = new StringBuilder(basePrompt);
         builder.AppendLine();
         builder.AppendLine();
         builder.AppendLine("可用 MCP 工具列表:");
+        if (useNativeFunctionCalling)
+        {
+            builder.AppendLine("参数 schema 已通过 OpenAI-compatible tools 请求提供，这里只保留名称和描述。");
+        }
 
         foreach (var tool in McpTools)
         {
@@ -7064,7 +7697,7 @@ public partial class AiChatViewModel : ViewModel
             }
 
             builder.AppendLine();
-            if (!string.IsNullOrWhiteSpace(tool.InputSchema))
+            if (!useNativeFunctionCalling && !string.IsNullOrWhiteSpace(tool.InputSchema))
             {
                 builder.AppendLine($"  schema: {tool.InputSchema.Trim()}");
             }
@@ -7119,6 +7752,10 @@ public partial class AiChatViewModel : ViewModel
         string? ClassifierReason);
 
     private readonly record struct AiReplyResult(string RawReply, int StreamMessageIndex);
+    private readonly record struct ToolPlanningReplyResult(
+        string RawReply,
+        int StreamMessageIndex,
+        IReadOnlyList<McpToolCall> ToolCalls);
     private readonly record struct ExecutedMcpToolCall(string Name, string ArgumentsJson, McpToolCallResult Result);
 
     private sealed class McpToolCall

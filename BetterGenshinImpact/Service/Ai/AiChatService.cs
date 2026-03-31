@@ -39,6 +39,17 @@ public sealed class AiChatService
         CancellationToken ct,
         Func<string, Task>? onDelta = null)
     {
+        var result = await GetChatCompletionResultAsync(config, messages, ct, null, onDelta).ConfigureAwait(false);
+        return result.Content;
+    }
+
+    public async Task<AiChatCompletionResult> GetChatCompletionResultAsync(
+        AiConfig config,
+        IReadOnlyList<AiChatMessage> messages,
+        CancellationToken ct,
+        IReadOnlyList<AiToolDefinition>? tools = null,
+        Func<string, Task>? onDelta = null)
+    {
         if (config == null)
         {
             throw new InvalidOperationException("AI 配置为空");
@@ -58,8 +69,13 @@ public sealed class AiChatService
         var endpoint = $"{baseUrl}/chat/completions";
         var payloadMessages = messages
             .Where(m => m.IsUser || m.IsAssistant || m.IsSystem)
-            .Select(m => new { role = m.Role.ToLowerInvariant(), content = m.Content })
+            .Select(m => new Dictionary<string, object?>
+            {
+                ["role"] = m.Role.ToLowerInvariant(),
+                ["content"] = m.Content
+            })
             .ToArray();
+        var payloadTools = BuildPayloadTools(tools);
 
         var responseFormat = config.UseJsonMode
             ? new Dictionary<string, object?>
@@ -81,6 +97,11 @@ public sealed class AiChatService
                 payload["response_format"] = responseFormat;
             }
 
+            if (payloadTools.Count > 0)
+            {
+                payload["tools"] = payloadTools;
+            }
+
             using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.ApiKey.Trim());
@@ -91,7 +112,7 @@ public sealed class AiChatService
             return (response.StatusCode, response.ReasonPhrase ?? string.Empty, body);
         }
 
-        async Task<(HttpStatusCode statusCode, string reasonPhrase, string body, string content)> SendStreamAsync(bool useJsonMode)
+        async Task<(HttpStatusCode statusCode, string reasonPhrase, string body, AiChatCompletionResult result)> SendStreamAsync(bool useJsonMode)
         {
             var payload = new Dictionary<string, object?>
             {
@@ -105,6 +126,11 @@ public sealed class AiChatService
                 payload["response_format"] = responseFormat;
             }
 
+            if (payloadTools.Count > 0)
+            {
+                payload["tools"] = payloadTools;
+            }
+
             using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
             request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -115,7 +141,7 @@ public sealed class AiChatService
             if ((int)response.StatusCode >= 400)
             {
                 var errorBody = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                return (response.StatusCode, response.ReasonPhrase ?? string.Empty, errorBody, string.Empty);
+                return (response.StatusCode, response.ReasonPhrase ?? string.Empty, errorBody, new AiChatCompletionResult());
             }
 
             var builder = new StringBuilder();
@@ -163,7 +189,10 @@ public sealed class AiChatService
                 _ = await ProcessSseDataAsync(dataBuffer.ToString()).ConfigureAwait(false);
             }
 
-            return (response.StatusCode, response.ReasonPhrase ?? string.Empty, string.Empty, builder.ToString());
+            return (response.StatusCode, response.ReasonPhrase ?? string.Empty, string.Empty, new AiChatCompletionResult
+            {
+                Content = builder.ToString()
+            });
 
             async Task<bool> ProcessSseDataAsync(string data)
             {
@@ -225,7 +254,8 @@ public sealed class AiChatService
             }
         }
 
-        if (config.UseStreamingResponse)
+        var useStreamingResponse = config.UseStreamingResponse && payloadTools.Count == 0;
+        if (useStreamingResponse)
         {
             var streamResult = await SendStreamAsync(config.UseJsonMode).ConfigureAwait(false);
             if ((int)streamResult.statusCode >= 400 &&
@@ -244,7 +274,7 @@ public sealed class AiChatService
                     config.Model));
             }
 
-            return streamResult.content;
+            return streamResult.result;
         }
 
         var result = await SendAsync(config.UseJsonMode).ConfigureAwait(false);
@@ -263,32 +293,7 @@ public sealed class AiChatService
                 config.Model));
         }
 
-        using var doc = JsonDocument.Parse(body);
-        if (doc.RootElement.TryGetProperty("error", out var error))
-        {
-            var message = error.TryGetProperty("message", out var msgElement)
-                ? msgElement.GetString()
-                : "未知错误";
-            throw new InvalidOperationException(message ?? "未知错误");
-        }
-
-        if (!doc.RootElement.TryGetProperty("choices", out var choices) || choices.ValueKind != JsonValueKind.Array || choices.GetArrayLength() == 0)
-        {
-            throw new InvalidOperationException("AI 返回为空");
-        }
-
-        var messageElement = choices[0].GetProperty("message");
-        if (messageElement.TryGetProperty("content", out var contentElement))
-        {
-            if (contentElement.ValueKind == JsonValueKind.String)
-            {
-                return contentElement.GetString() ?? string.Empty;
-            }
-
-            return contentElement.GetRawText();
-        }
-
-        return string.Empty;
+        return ParseChatCompletionResult(body);
     }
 
     private static string BuildHttpFailureMessage(HttpStatusCode statusCode, string reasonPhrase, string? body, string? model)
@@ -372,21 +377,161 @@ public sealed class AiChatService
         }
     }
 
-    private static string ExtractDeltaContent(JsonElement deltaElement)
+    private static IReadOnlyList<Dictionary<string, object?>> BuildPayloadTools(IReadOnlyList<AiToolDefinition>? tools)
     {
-        if (!deltaElement.TryGetProperty("content", out var contentElement))
+        if (tools == null || tools.Count == 0)
+        {
+            return Array.Empty<Dictionary<string, object?>>();
+        }
+
+        var payloadTools = new List<Dictionary<string, object?>>(tools.Count);
+        foreach (var tool in tools)
+        {
+            if (string.IsNullOrWhiteSpace(tool.Name))
+            {
+                continue;
+            }
+
+            payloadTools.Add(new Dictionary<string, object?>
+            {
+                ["type"] = "function",
+                ["function"] = new Dictionary<string, object?>
+                {
+                    ["name"] = tool.Name.Trim(),
+                    ["description"] = string.IsNullOrWhiteSpace(tool.Description) ? null : tool.Description.Trim(),
+                    ["parameters"] = tool.Parameters ?? JsonSerializer.SerializeToNode(BuildDefaultToolParameters(), JsonOptions)
+                }
+            });
+        }
+
+        return payloadTools.Count == 0
+            ? Array.Empty<Dictionary<string, object?>>()
+            : payloadTools;
+    }
+
+    private static Dictionary<string, object?> BuildDefaultToolParameters()
+    {
+        return new Dictionary<string, object?>
+        {
+            ["type"] = "object",
+            ["properties"] = new Dictionary<string, object?>()
+        };
+    }
+
+    private static AiChatCompletionResult ParseChatCompletionResult(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            throw new InvalidOperationException("AI 返回为空");
+        }
+
+        using var doc = JsonDocument.Parse(body);
+        if (doc.RootElement.TryGetProperty("error", out var error))
+        {
+            var message = error.TryGetProperty("message", out var msgElement)
+                ? msgElement.GetString()
+                : "未知错误";
+            throw new InvalidOperationException(message ?? "未知错误");
+        }
+
+        if (!doc.RootElement.TryGetProperty("choices", out var choices) ||
+            choices.ValueKind != JsonValueKind.Array ||
+            choices.GetArrayLength() == 0)
+        {
+            throw new InvalidOperationException("AI 返回为空");
+        }
+
+        var messageElement = choices[0].GetProperty("message");
+        return new AiChatCompletionResult
+        {
+            Content = ExtractMessageContent(messageElement),
+            ToolCalls = ExtractToolCalls(messageElement)
+        };
+    }
+
+    private static string ExtractMessageContent(JsonElement messageElement)
+    {
+        if (!messageElement.TryGetProperty("content", out var contentElement) ||
+            contentElement.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
         {
             return string.Empty;
         }
 
+        return ExtractContentText(contentElement);
+    }
+
+    private static IReadOnlyList<AiToolCall> ExtractToolCalls(JsonElement messageElement)
+    {
+        if (!messageElement.TryGetProperty("tool_calls", out var toolCallsElement) ||
+            toolCallsElement.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<AiToolCall>();
+        }
+
+        var calls = new List<AiToolCall>(toolCallsElement.GetArrayLength());
+        foreach (var toolCallElement in toolCallsElement.EnumerateArray())
+        {
+            if (toolCallElement.ValueKind != JsonValueKind.Object ||
+                !toolCallElement.TryGetProperty("function", out var functionElement) ||
+                functionElement.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var name = functionElement.TryGetProperty("name", out var nameElement) &&
+                       nameElement.ValueKind == JsonValueKind.String
+                ? nameElement.GetString()
+                : null;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            var argumentsJson = "{}";
+            if (functionElement.TryGetProperty("arguments", out var argumentsElement))
+            {
+                argumentsJson = argumentsElement.ValueKind == JsonValueKind.String
+                    ? argumentsElement.GetString() ?? "{}"
+                    : argumentsElement.GetRawText();
+                if (string.IsNullOrWhiteSpace(argumentsJson))
+                {
+                    argumentsJson = "{}";
+                }
+            }
+
+            var id = toolCallElement.TryGetProperty("id", out var idElement) &&
+                     idElement.ValueKind == JsonValueKind.String
+                ? idElement.GetString()
+                : string.Empty;
+
+            calls.Add(new AiToolCall
+            {
+                Id = id ?? string.Empty,
+                Name = name.Trim(),
+                ArgumentsJson = argumentsJson
+            });
+        }
+
+        return calls.Count == 0 ? Array.Empty<AiToolCall>() : calls;
+    }
+
+    private static string ExtractContentText(JsonElement contentElement)
+    {
         if (contentElement.ValueKind == JsonValueKind.String)
         {
             return contentElement.GetString() ?? string.Empty;
         }
 
+        if (contentElement.ValueKind == JsonValueKind.Object &&
+            contentElement.TryGetProperty("text", out var textElement) &&
+            textElement.ValueKind == JsonValueKind.String)
+        {
+            return textElement.GetString() ?? string.Empty;
+        }
+
         if (contentElement.ValueKind != JsonValueKind.Array)
         {
-            return string.Empty;
+            return contentElement.GetRawText();
         }
 
         var builder = new StringBuilder();
@@ -399,14 +544,24 @@ public sealed class AiChatService
             }
 
             if (item.ValueKind == JsonValueKind.Object &&
-                item.TryGetProperty("text", out var textElement) &&
-                textElement.ValueKind == JsonValueKind.String)
+                item.TryGetProperty("text", out var itemTextElement) &&
+                itemTextElement.ValueKind == JsonValueKind.String)
             {
-                builder.Append(textElement.GetString());
+                builder.Append(itemTextElement.GetString());
             }
         }
 
-        return builder.ToString();
+        return builder.Length == 0 ? contentElement.GetRawText() : builder.ToString();
+    }
+
+    private static string ExtractDeltaContent(JsonElement deltaElement)
+    {
+        if (!deltaElement.TryGetProperty("content", out var contentElement))
+        {
+            return string.Empty;
+        }
+
+        return ExtractContentText(contentElement);
     }
 
     private static bool ShouldRetryWithoutJsonMode(HttpStatusCode statusCode, string body)

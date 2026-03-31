@@ -1856,7 +1856,17 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
         var repoRoot = TryGetCenterRepoContentRoot();
         if (string.IsNullOrWhiteSpace(repoRoot) || !Directory.Exists(repoRoot))
         {
-            return (false, 0, "本地脚本仓库不存在，请先在脚本仓库页更新仓库后再订阅。", importedPaths);
+            var ensureResult = await EnsureLocalScriptRepoReadyAsync(ct);
+            if (!ensureResult.ok)
+            {
+                return (false, 0, ensureResult.error ?? "本地脚本仓库初始化失败。", importedPaths);
+            }
+
+            repoRoot = TryGetCenterRepoContentRoot();
+            if (string.IsNullOrWhiteSpace(repoRoot) || !Directory.Exists(repoRoot))
+            {
+                return (false, 0, "本地脚本仓库初始化后仍不可用。", importedPaths);
+            }
         }
 
         ct.ThrowIfCancellationRequested();
@@ -1875,6 +1885,64 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
             _logger.LogDebug(ex, "[MCP {Tag}] subscribe import failed", InstanceTag);
             return (false, 0, ex.Message, importedPaths);
         }
+    }
+
+    private async Task<(bool ok, string? error)> EnsureLocalScriptRepoReadyAsync(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+
+        var repoRoot = TryGetCenterRepoContentRoot();
+        if (!string.IsNullOrWhiteSpace(repoRoot) && Directory.Exists(repoRoot))
+        {
+            return (true, null);
+        }
+
+        var repoUrl = ResolveCurrentScriptRepoUrl();
+        if (string.IsNullOrWhiteSpace(repoUrl))
+        {
+            return (false, "无法确定当前脚本仓库地址，无法自动初始化本地仓库。");
+        }
+
+        try
+        {
+            var scriptConfig = _configService.Get().ScriptConfig;
+            await ScriptRepoUpdater.Instance.UpdateCenterRepoByGit(
+                repoUrl,
+                null,
+                scriptConfig.UseSystemProxyForRepoUpdate);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "[MCP {Tag}] ensure local script repo failed", InstanceTag);
+            return (false, $"自动初始化本地脚本仓库失败：{ex.Message}");
+        }
+
+        repoRoot = TryGetCenterRepoContentRoot();
+        return !string.IsNullOrWhiteSpace(repoRoot) && Directory.Exists(repoRoot)
+            ? (true, null)
+            : (false, "自动初始化本地脚本仓库失败：仓库目录未生成。");
+    }
+
+    private string? ResolveCurrentScriptRepoUrl()
+    {
+        var scriptConfig = _configService.Get().ScriptConfig;
+        var channelName = scriptConfig.SelectedChannelName;
+        if (string.IsNullOrWhiteSpace(channelName))
+        {
+            return ScriptRepoUpdater.RepoChannels["CNB"];
+        }
+
+        if (string.Equals(channelName, "自定义", StringComparison.OrdinalIgnoreCase))
+        {
+            var customUrl = scriptConfig.CustomRepoUrl?.Trim();
+            return !string.IsNullOrWhiteSpace(customUrl) && customUrl != "https://example.com/custom-repo"
+                ? customUrl
+                : null;
+        }
+
+        return ScriptRepoUpdater.RepoChannels.TryGetValue(channelName, out var repoUrl)
+            ? repoUrl
+            : ScriptRepoUpdater.RepoChannels["CNB"];
     }
 
     private static List<string> ExtractScriptPathsFromMatches(IEnumerable<object> matches)
@@ -4805,11 +4873,15 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
         {
             var rel = GetRelativePathSafe(root, file);
             var candidateFile = Path.GetFileName(file);
-            if (IsNameMatch(name, rel) || IsNameMatch(name, candidateFile))
+            var dir = Path.GetDirectoryName(file) ?? string.Empty;
+            var relFolder = GetRelativePathSafe(root, dir);
+            var folderName = Path.GetFileName(dir);
+            if (IsNameMatch(name, rel) ||
+                IsNameMatch(name, candidateFile) ||
+                IsNameMatch(name, relFolder) ||
+                IsNameMatch(name, folderName))
             {
                 fileName = candidateFile;
-                var dir = Path.GetDirectoryName(file) ?? string.Empty;
-                var relFolder = GetRelativePathSafe(root, dir);
                 folder = relFolder == "." ? string.Empty : relFolder;
                 return true;
             }

@@ -29,10 +29,16 @@ public partial class AiConfig : ObservableObject
     private string _model = "Qwen/Qwen2.5-72B-Instruct";
 
     /// <summary>
-    /// 启用 JSON Mode（优先用于稳定输出结构化 MCP 调用）
+    /// 启用 JSON Mode（兼容层或其他结构化输出场景的附加参数）
     /// </summary>
     [ObservableProperty]
     private bool _useJsonMode = true;
+
+    /// <summary>
+    /// 启用工具调用硬兼容层（旧 JSON / 文本解析链）
+    /// </summary>
+    [ObservableProperty]
+    private bool _useLegacyToolCallCompatibility = false;
 
     /// <summary>
     /// 启用流式输出（stream=true），聊天窗口将使用打字机效果渐进显示回复

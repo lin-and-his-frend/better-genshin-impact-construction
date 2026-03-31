@@ -324,6 +324,22 @@ public partial class AiChatViewModel : ViewModel
         "我想要", "我想", "帮我", "请帮我", "麻烦", "请", "可以", "能不能", "一下", "帮忙",
         "自动", "脚本", "用脚本", "用地图追踪", "地图追踪", "运行", "执行", "安排"
     ];
+    private static readonly string[] ContextCarryReferenceKeywords =
+    [
+        "这个", "那个", "这些", "那些", "上面", "前面", "刚才", "之前", "前一个", "上一条", "上一轮", "上一步",
+        "继续", "接着", "然后", "它", "他", "她"
+    ];
+    private static readonly string[] GenericExecutionInstructionPhrases =
+    [
+        "请你", "帮我", "麻烦", "请", "做好规划", "规划一下", "先规划", "直接执行", "直接运行", "继续执行", "继续运行",
+        "接着执行", "能做的部分", "可执行的任务", "可以执行的任务", "剩下的任务", "后续任务", "安排一下", "处理一下",
+        "任务列表", "步骤", "计划", "规划", "直接", "继续", "接着", "然后", "任务", "部分"
+    ];
+    private static readonly string[] PathingSourceKeywords =
+    [
+        "采集", "收集", "拾取", "捡取", "跑图", "路线", "点位", "特产", "挖矿",
+        "打怪", "刷怪", "清怪", "击杀", "讨伐", "怪物", "精英怪", "boss", "BOSS", "锄地", "地图追踪"
+    ];
     private static readonly string[] DocHelpKeywords =
     [
         "报错", "错误", "异常", "崩溃", "闪退", "失败", "无法", "打不开", "重定向", "预热",
@@ -2248,7 +2264,7 @@ public partial class AiChatViewModel : ViewModel
         calls = Array.Empty<McpToolCall>();
         if (intent.PathingPriorityIntent)
         {
-            var query = BuildPathingSearchQuery(userText);
+            var query = BuildPathingSearchQuery(ResolvePathingSourceText(userText));
             if (!string.IsNullOrWhiteSpace(query))
             {
                 var searchArgs = new JsonObject
@@ -2399,7 +2415,7 @@ public partial class AiChatViewModel : ViewModel
 
         if (intent.PathingPriorityIntent || IsPathingPriorityIntentByKeyword(userText))
         {
-            var pathingQuery = BuildPathingSearchQuery(userText);
+            var pathingQuery = BuildPathingSearchQuery(ResolvePathingSourceText(userText));
             if (!string.IsNullOrWhiteSpace(pathingQuery))
             {
                 var args = new JsonObject
@@ -2806,19 +2822,19 @@ public partial class AiChatViewModel : ViewModel
             return string.Empty;
         }
 
+        if (!ShouldCarryRecentUserContextForIntentClassification(current))
+        {
+            return current;
+        }
+
         const int maxContextItems = 4;
         const int maxContextChars = 640;
-        var context = new List<(string role, string content)>(maxContextItems);
+        var context = new List<string>(maxContextItems);
         var usedChars = 0;
         for (var i = Messages.Count - 1; i >= 0 && context.Count < maxContextItems; i--)
         {
             var message = Messages[i];
-            if (message.IsMcp || message.IsSystem)
-            {
-                continue;
-            }
-
-            if (!(message.IsUser || message.IsAssistant))
+            if (!message.IsUser)
             {
                 continue;
             }
@@ -2841,7 +2857,7 @@ public partial class AiChatViewModel : ViewModel
                 continue;
             }
 
-            context.Add((message.IsUser ? "用户" : "助手", content));
+            context.Add(content);
             usedChars += content.Length;
         }
 
@@ -2852,10 +2868,10 @@ public partial class AiChatViewModel : ViewModel
 
         context.Reverse();
         var builder = new StringBuilder();
-        builder.AppendLine("最近对话上下文：");
-        foreach (var (role, content) in context)
+        builder.AppendLine("最近用户上下文：");
+        foreach (var content in context)
         {
-            builder.Append(role).Append('：').AppendLine(content);
+            builder.Append("用户：").AppendLine(content);
         }
 
         builder.Append("当前用户输入：").Append(current);
@@ -2993,6 +3009,51 @@ public partial class AiChatViewModel : ViewModel
         }
 
         return ContainsAny(text, GeneralKnowledgeKeywords);
+    }
+
+    private static bool ShouldCarryRecentUserContextForIntentClassification(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        return ContainsAny(text, ContextCarryReferenceKeywords) ||
+               IsGenericContinuationInstruction(text);
+    }
+
+    private static bool IsGenericContinuationInstruction(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        if (IsGeneralKnowledgeQuery(text) ||
+            IsPathingPriorityIntentByKeyword(text) ||
+            IsScriptSubscribeIntent(text) ||
+            IsScriptDetailIntent(text) ||
+            IsDocHelpIntent(text) ||
+            IsStatusQuery(text) ||
+            IsLikelyFeatureControlText(text))
+        {
+            return false;
+        }
+
+        if (!ContainsAny(text, "执行", "运行", "继续", "接着", "安排", "处理", "规划", "任务", "步骤", "部分"))
+        {
+            return false;
+        }
+
+        var normalized = text.Trim();
+        foreach (var phrase in GenericExecutionInstructionPhrases)
+        {
+            normalized = normalized.Replace(phrase, " ", StringComparison.OrdinalIgnoreCase);
+        }
+
+        normalized = Regex.Replace(normalized, @"[，。！？,.!?:：；;（）()\[\]{}""'`]+", " ");
+        normalized = Regex.Replace(normalized, @"\s+", " ").Trim();
+        return normalized.Length <= 8;
     }
 
     private static bool TryParseIntentClassifierReply(string reply, out IntentClassificationHints hints)
@@ -3391,6 +3452,7 @@ public partial class AiChatViewModel : ViewModel
             return toolCalls;
         }
 
+        var effectiveUserText = ResolvePathingSourceText(userText);
         var hasScriptToolCall = false;
         foreach (var call in toolCalls)
         {
@@ -3405,10 +3467,10 @@ public partial class AiChatViewModel : ViewModel
 
         if (!hasScriptToolCall)
         {
-            var query = BuildPathingSearchQuery(userText);
+            var query = BuildPathingSearchQuery(effectiveUserText);
             if (string.IsNullOrWhiteSpace(query))
             {
-                query = userText.Trim();
+                query = effectiveUserText.Trim();
             }
 
             if (!string.IsNullOrWhiteSpace(query))
@@ -3430,7 +3492,7 @@ public partial class AiChatViewModel : ViewModel
         {
             if (string.Equals(call.Name, "bgi.script.search", StringComparison.OrdinalIgnoreCase))
             {
-                if (TryForcePathingSearchArguments(call.ArgumentsJson, userText, out var normalizedArgs, out var argsChanged))
+                if (TryForcePathingSearchArguments(call.ArgumentsJson, effectiveUserText, out var normalizedArgs, out var argsChanged))
                 {
                     rewritten.Add(new McpToolCall(call.Name, normalizedArgs));
                     changed |= argsChanged;
@@ -3445,7 +3507,7 @@ public partial class AiChatViewModel : ViewModel
 
             if (string.Equals(call.Name, "bgi.script.list", StringComparison.OrdinalIgnoreCase))
             {
-                if (TryForcePathingListArguments(call.ArgumentsJson, userText, out var normalizedArgs, out var argsChanged))
+                if (TryForcePathingListArguments(call.ArgumentsJson, effectiveUserText, out var normalizedArgs, out var argsChanged))
                 {
                     rewritten.Add(new McpToolCall(call.Name, normalizedArgs));
                     changed |= argsChanged;
@@ -3758,6 +3820,97 @@ public partial class AiChatViewModel : ViewModel
             ["provider"] = "auto"
         };
         return new McpToolCall("bgi.web.search", args.ToJsonString());
+    }
+
+    private static bool IsPathingSourceCandidate(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        if (IsGeneralKnowledgeQuery(text) ||
+            IsScriptSubscribeIntent(text) ||
+            IsScriptDetailIntent(text) ||
+            IsDocHelpIntent(text) ||
+            IsStatusQuery(text) ||
+            IsLikelyFeatureControlText(text) ||
+            IsGenericContinuationInstruction(text))
+        {
+            return false;
+        }
+
+        return ContainsAny(text, PathingSourceKeywords) ||
+               (text.Contains("材料", StringComparison.OrdinalIgnoreCase) &&
+                ContainsAny(text, "采集", "跑图", "路线", "地图", "追踪"));
+    }
+
+    private static string ResolveContextualPathingSourceText(string currentText, IReadOnlyList<string> recentUserTexts)
+    {
+        var current = currentText?.Trim() ?? string.Empty;
+        if (current.Length == 0 || recentUserTexts == null || recentUserTexts.Count == 0)
+        {
+            return current;
+        }
+
+        if (!ContainsAny(current, ContextCarryReferenceKeywords) &&
+            !IsGenericContinuationInstruction(current))
+        {
+            return current;
+        }
+
+        foreach (var candidate in recentUserTexts)
+        {
+            var trimmed = candidate?.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed) ||
+                string.Equals(trimmed, current, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (IsPathingSourceCandidate(trimmed))
+            {
+                return trimmed;
+            }
+        }
+
+        return current;
+    }
+
+    private string ResolvePathingSourceText(string userText)
+    {
+        var current = userText?.Trim() ?? string.Empty;
+        if (current.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        if (!ContainsAny(current, ContextCarryReferenceKeywords) &&
+            !IsGenericContinuationInstruction(current))
+        {
+            return current;
+        }
+
+        const int maxRecentUsers = 6;
+        var recentUsers = new List<string>(maxRecentUsers);
+        for (var i = Messages.Count - 1; i >= 0 && recentUsers.Count < maxRecentUsers; i--)
+        {
+            var message = Messages[i];
+            if (!message.IsUser || string.IsNullOrWhiteSpace(message.Content))
+            {
+                continue;
+            }
+
+            var content = message.Content.Trim();
+            if (string.Equals(content, current, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            recentUsers.Add(content);
+        }
+
+        return ResolveContextualPathingSourceText(current, recentUsers);
     }
 
     private static IReadOnlyList<McpToolCall> BuildCharacterAutomationSearchCalls(

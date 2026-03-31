@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Reflection;
 
 namespace BetterGenshinImpact.UnitTest.HelperTests;
@@ -290,6 +291,63 @@ public class AiChatExecutionPlanTests
         Assert.DoesNotContain("常燃火种", summary);
     }
 
+    [Fact]
+    public void ShouldCarryRecentUserContextForIntentClassification_ShouldReturnTrue_ForGenericExecutionInstruction()
+    {
+        var method = GetStaticMethod("ShouldCarryRecentUserContextForIntentClassification", typeof(string));
+
+        var result = (bool)method.Invoke(null, ["请你做好规划直接执行可执行的任务"])!;
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void ShouldCarryRecentUserContextForIntentClassification_ShouldReturnFalse_ForExplicitPathingRequest()
+    {
+        var method = GetStaticMethod("ShouldCarryRecentUserContextForIntentClassification", typeof(string));
+
+        var result = (bool)method.Invoke(null, ["帮我找枫丹泡泡桔采集路线"])!;
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void ResolveContextualPathingSourceText_ShouldUseRecentPathingUserText_ForGenericExecutionInstruction()
+    {
+        var method = GetResolveContextualPathingSourceTextMethod();
+        IReadOnlyList<string> recentUsers = ["帮我找枫丹泡泡桔采集路线"];
+
+        var resolved = method.Invoke(null, ["请你做好规划直接执行可执行的任务", recentUsers]) as string;
+
+        Assert.Equal("帮我找枫丹泡泡桔采集路线", resolved);
+    }
+
+    [Fact]
+    public void ResolveContextualPathingSourceText_ShouldKeepCurrentText_WhenRecentUserTextIsKnowledgeQuestion()
+    {
+        var method = GetResolveContextualPathingSourceTextMethod();
+        IReadOnlyList<string> recentUsers = ["我想要练可莉需要什么"];
+
+        var resolved = method.Invoke(null, ["请你做好规划直接执行可执行的任务", recentUsers]) as string;
+
+        Assert.Equal("请你做好规划直接执行可执行的任务", resolved);
+    }
+
+    [Fact]
+    public void ResolveContextualPathingSourceText_ShouldPreferMostRecentSpecificUserText()
+    {
+        var method = GetResolveContextualPathingSourceTextMethod();
+        IReadOnlyList<string> recentUsers =
+        [
+            "帮我找须弥劫波莲采集路线",
+            "帮我找枫丹泡泡桔采集路线"
+        ];
+
+        var resolved = method.Invoke(null, ["请你做好规划直接执行可执行的任务", recentUsers]) as string;
+
+        Assert.Equal("帮我找须弥劫波莲采集路线", resolved);
+    }
+
     private static MethodInfo GetStaticMethod(string name, params Type[] parameterTypes)
     {
         var type = GetAiChatViewModelType();
@@ -298,6 +356,19 @@ public class AiChatExecutionPlanTests
             BindingFlags.NonPublic | BindingFlags.Static,
             binder: null,
             types: parameterTypes,
+            modifiers: null);
+        Assert.NotNull(method);
+        return method!;
+    }
+
+    private static MethodInfo GetResolveContextualPathingSourceTextMethod()
+    {
+        var type = GetAiChatViewModelType();
+        var method = type.GetMethod(
+            "ResolveContextualPathingSourceText",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            types: [typeof(string), typeof(IReadOnlyList<string>)],
             modifiers: null);
         Assert.NotNull(method);
         return method!;

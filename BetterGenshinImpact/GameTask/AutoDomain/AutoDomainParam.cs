@@ -106,10 +106,10 @@ public class AutoDomainParam : BaseTaskParam<AutoDomainTask>
 
         if ("根据队伍自动选择".Equals(strategyName))
         {
-            return Global.Absolute(@"User\AutoFight\");
+            return UserPathProvider.CombatScriptsRoot;
         }
 
-        return Global.Absolute(@"User\AutoFight\" + strategyName + ".txt");
+        return Path.Combine(UserPathProvider.CombatScriptsRoot, strategyName + ".txt");
     }
 
     public void SetResinPriorityList(params string[] priorities)

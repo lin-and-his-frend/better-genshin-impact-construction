@@ -78,10 +78,10 @@ public class AutoStygianOnslaughtParam:BaseTaskParam<AutoStygianOnslaughtTask>
 
         if (string.IsNullOrWhiteSpace(strategyName) ||"根据队伍自动选择".Equals(strategyName))
         {
-            CombatScriptBagPath= Global.Absolute(@"User\AutoFight\");
+            CombatScriptBagPath = UserPathProvider.CombatScriptsRoot;
             return;
         }
 
-        CombatScriptBagPath= Global.Absolute(@"User\AutoFight\" + strategyName + ".txt");
+        CombatScriptBagPath = Path.Combine(UserPathProvider.CombatScriptsRoot, strategyName + ".txt");
     }
 }

@@ -20,15 +20,15 @@ public partial class AutoFightViewModel : ObservableObject, IViewModel
     public AutoFightViewModel()
     {
         Config = TaskContext.Instance().Config;
-        _strategyList = LoadCustomScript(Global.Absolute(@"User\AutoGeniusInvokation"));
-        _combatStrategyList = ["根据队伍自动选择", .. LoadCustomScript(Global.Absolute(@"User\AutoFight"))];
+        _strategyList = LoadCustomScript(UserPathProvider.TcgScriptsRoot);
+        _combatStrategyList = ["根据队伍自动选择", .. LoadCustomScript(UserPathProvider.CombatScriptsRoot)];
     }
 
     public AutoFightViewModel(AllConfig config)
     {
         Config = config;
-        _strategyList = LoadCustomScript(Global.Absolute(@"User\AutoGeniusInvokation"));
-        _combatStrategyList = ["根据队伍自动选择", .. LoadCustomScript(Global.Absolute(@"User\AutoFight"))];
+        _strategyList = LoadCustomScript(UserPathProvider.TcgScriptsRoot);
+        _combatStrategyList = ["根据队伍自动选择", .. LoadCustomScript(UserPathProvider.CombatScriptsRoot)];
     }
 
     [ObservableProperty]
@@ -67,11 +67,11 @@ public partial class AutoFightViewModel : ObservableObject, IViewModel
         switch (type)
         {
             case "Combat":
-                CombatStrategyList = ["根据队伍自动选择", .. LoadCustomScript(Global.Absolute(@"User\AutoFight"))];
+                CombatStrategyList = ["根据队伍自动选择", .. LoadCustomScript(UserPathProvider.CombatScriptsRoot)];
                 break;
 
             case "GeniusInvocation":
-                StrategyList = LoadCustomScript(Global.Absolute(@"User\AutoGeniusInvokation"));
+                StrategyList = LoadCustomScript(UserPathProvider.TcgScriptsRoot);
                 break;
         }
     }
@@ -86,6 +86,6 @@ public partial class AutoFightViewModel : ObservableObject, IViewModel
     [RelayCommand]
     public void OnOpenFightFolder()
     {
-        Process.Start("explorer.exe", Global.Absolute(@"User\AutoFight\"));
+        Process.Start("explorer.exe", UserPathProvider.CombatScriptsRoot);
     }
 }

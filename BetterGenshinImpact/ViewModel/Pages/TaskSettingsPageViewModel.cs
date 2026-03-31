@@ -232,9 +232,9 @@ public partial class TaskSettingsPageViewModel : ViewModel
         NormalizeLeyLineOutcropType();
         _scanDropsAfterRewardEnabledUi = Config.AutoLeyLineOutcropConfig.ScanDropsAfterRewardEnabled;
 
-        //_strategyList = LoadCustomScript(Global.Absolute(@"User\AutoGeniusInvokation"));
+        //_strategyList = LoadCustomScript(UserPathProvider.TcgScriptsRoot);
 
-        //_combatStrategyList = ["根据队伍自动选择", .. LoadCustomScript(Global.Absolute(@"User\AutoFight"))];
+        //_combatStrategyList = ["根据队伍自动选择", .. LoadCustomScript(UserPathProvider.CombatScriptsRoot)];
 
         _domainNameList = ["", .. MapLazyAssets.Instance.DomainNameList];
         _autoFightViewModel = new AutoFightViewModel(Config);
@@ -399,7 +399,7 @@ public partial class TaskSettingsPageViewModel : ViewModel
             return true;
         }
 
-        var path = Global.Absolute(@"User\AutoGeniusInvokation\" + Config.AutoGeniusInvokationConfig.StrategyName + ".txt");
+        var path = Path.Combine(UserPathProvider.TcgScriptsRoot, Config.AutoGeniusInvokationConfig.StrategyName + ".txt");
 
         if (!File.Exists(path))
         {
@@ -407,7 +407,7 @@ public partial class TaskSettingsPageViewModel : ViewModel
             return true;
         }
 
-        content = File.ReadAllText(path);
+        content = UserFileService.ReadAllTextIfExists(path) ?? string.Empty;
         return false;
     }
 
@@ -482,10 +482,10 @@ public partial class TaskSettingsPageViewModel : ViewModel
             return true;
         }
 
-        path = Global.Absolute(@"User\AutoFight\" + strategyName + ".txt");
+        path = Path.Combine(UserPathProvider.CombatScriptsRoot, strategyName + ".txt");
         if ("根据队伍自动选择".Equals(strategyName))
         {
-            path = Global.Absolute(@"User\AutoFight\");
+            path = UserPathProvider.CombatScriptsRoot;
         }
 
         if (!File.Exists(path) && !Directory.Exists(path))

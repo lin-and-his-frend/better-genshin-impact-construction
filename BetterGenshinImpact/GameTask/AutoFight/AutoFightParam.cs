@@ -103,11 +103,11 @@ public class AutoFightParam : BaseTaskParam<AutoFightTask>
 
         if ("根据队伍自动选择".Equals(strategyName))
         {
-            CombatStrategyPath =  Global.Absolute(@"User\AutoFight\");
+            CombatStrategyPath = UserPathProvider.CombatScriptsRoot;
         }
         else
         {
-            CombatStrategyPath =  Global.Absolute(@"User\AutoFight\" + strategyName + ".txt");
+            CombatStrategyPath = Path.Combine(UserPathProvider.CombatScriptsRoot, strategyName + ".txt");
         }
     }
 

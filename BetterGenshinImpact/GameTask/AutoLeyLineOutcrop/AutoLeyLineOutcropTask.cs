@@ -1254,10 +1254,10 @@ public class AutoLeyLineOutcropTask : ISoloTask
 
     private static string BuildAutoFightStrategyPath(AutoFightConfig config)
     {
-        var path = Global.Absolute(@"User\AutoFight\" + config.StrategyName + ".txt");
+        var path = Path.Combine(UserPathProvider.CombatScriptsRoot, config.StrategyName + ".txt");
         if ("根据队伍自动选择".Equals(config.StrategyName))
         {
-            path = Global.Absolute(@"User\AutoFight\");
+            path = UserPathProvider.CombatScriptsRoot;
         }
 
         if (!File.Exists(path) && !Directory.Exists(path))

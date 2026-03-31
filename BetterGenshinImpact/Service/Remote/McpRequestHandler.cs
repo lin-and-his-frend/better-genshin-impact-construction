@@ -1541,7 +1541,7 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
 
         try
         {
-            var dir = Global.Absolute(@"User\I18n");
+            var dir = UserPathProvider.I18nRoot;
             Directory.CreateDirectory(dir);
             var path = Path.Combine(dir, $"{normalizedCulture}.json");
             var tmp = $"{path}.{Guid.NewGuid():N}.tmp";
@@ -4574,7 +4574,7 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
             return false;
         }
 
-        var folder = Global.Absolute(@"User\ScriptGroup");
+        var folder = UserPathProvider.ScriptGroupRoot;
         var path = Path.Combine(folder, $"{name}.json");
         return File.Exists(path);
     }
@@ -4727,7 +4727,7 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
     private static bool TryFindJsScript(string name, out ScriptProject? project)
     {
         project = null;
-        var root = Global.ScriptPath();
+        var root = UserPathProvider.JsScriptsRoot;
         if (!Directory.Exists(root))
         {
             return false;
@@ -4770,7 +4770,7 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
     private static bool TryFindKeyMouseScript(string name, out string relativePath)
     {
         relativePath = string.Empty;
-        var root = Global.Absolute(@"User\KeyMouseScript");
+        var root = UserPathProvider.KeyMouseScriptsRoot;
         if (!Directory.Exists(root))
         {
             return false;
@@ -6457,7 +6457,12 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
 
             try
             {
-                var content = File.ReadAllText(filePath);
+                var content = UserFileService.ReadAllTextIfExists(filePath);
+                if (string.IsNullOrWhiteSpace(content))
+                {
+                    continue;
+                }
+
                 var summary = ExtractReadmeSummary(content);
                 if (!string.IsNullOrWhiteSpace(summary))
                 {
@@ -6604,7 +6609,7 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
     {
         try
         {
-            var folder = Global.Absolute(@"User\ScriptGroup");
+            var folder = UserPathProvider.ScriptGroupRoot;
             if (!Directory.Exists(folder))
             {
                 return Array.Empty<ScriptGroupInfo>();
@@ -6657,7 +6662,12 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
         info = null!;
         try
         {
-            var json = File.ReadAllText(file);
+            var json = UserFileService.ReadAllTextIfExists(file);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return false;
+            }
+
             var group = ScriptGroup.FromJson(json);
             info = new ScriptGroupInfo
             {
@@ -6678,7 +6688,7 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
         var list = new List<JsScriptInfo>();
         try
         {
-            var root = Global.ScriptPath();
+            var root = UserPathProvider.JsScriptsRoot;
             if (!Directory.Exists(root))
             {
                 return list;
@@ -6730,7 +6740,7 @@ internal sealed class McpRequestHandler : IMcpRequestHandler
         var list = new List<KeyMouseScriptInfo>();
         try
         {
-            var root = Global.Absolute(@"User\KeyMouseScript");
+            var root = UserPathProvider.KeyMouseScriptsRoot;
             if (!Directory.Exists(root))
             {
                 return list;

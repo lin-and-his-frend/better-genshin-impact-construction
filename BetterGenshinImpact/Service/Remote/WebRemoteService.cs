@@ -1438,7 +1438,14 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             return;
         }
 
-        var json = await File.ReadAllTextAsync(path, ct);
+        var json = UserFileService.ReadAllTextIfExists(path);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            response.StatusCode = (int)HttpStatusCode.NotFound;
+            response.Close();
+            return;
+        }
+
         await WriteStringAsync(response, json, "application/json; charset=utf-8", ct);
     }
 
@@ -1466,7 +1473,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
 
         var group = new ScriptGroup { Name = payload.Name };
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
-        await File.WriteAllTextAsync(file, group.ToJson(), ct);
+        UserFileService.WriteAllText(file, group.ToJson());
         await WriteJsonAsync(response, new { ok = true }, ct);
     }
 
@@ -1591,7 +1598,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
 
         Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         AlignScriptGroupNextTask(group);
-        await File.WriteAllTextAsync(file, group.ToJson(), ct);
+        UserFileService.WriteAllText(file, group.ToJson());
         await WriteJsonAsync(response, new { ok = true }, ct);
     }
 
@@ -1677,7 +1684,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
 
         if (payload.KeyMouseNames != null)
         {
-            var keyMouseRoot = Path.GetFullPath(Global.Absolute(@"User\KeyMouseScript"));
+            var keyMouseRoot = Path.GetFullPath(UserPathProvider.KeyMouseScriptsRoot);
             foreach (var name in payload.KeyMouseNames.Where(n => !string.IsNullOrWhiteSpace(n)))
             {
                 if (!TryNormalizeRelativePathUnderRoot(keyMouseRoot, name, out var normalizedRelative))
@@ -4675,7 +4682,12 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             return new { ok = false, error };
         }
 
-        var content = await File.ReadAllTextAsync(path, ct);
+        var content = UserFileService.ReadAllTextIfExists(path);
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return new { ok = false, error = "策略文件不存在或为空" };
+        }
+
         StartBackgroundTask(() => new TaskRunner().RunSoloTaskAsync(new AutoGeniusInvokationTask(new GeniusInvokationTaskParam(content))));
         return new { ok = true };
     }
@@ -4955,7 +4967,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             return false;
         }
 
-        var folder = Global.Absolute(@"User\AutoFight\");
+        var folder = UserPathProvider.CombatScriptsRoot;
         if ("根据队伍自动选择".Equals(strategyName, StringComparison.OrdinalIgnoreCase))
         {
             path = folder;
@@ -4988,7 +5000,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             return false;
         }
 
-        var folder = Global.Absolute(@"User\AutoGeniusInvokation");
+        var folder = UserPathProvider.TcgScriptsRoot;
         if (!TryGetSafeTxtPathUnderFolder(folder, strategyName, out path))
         {
             error = "策略名称非法";
@@ -5036,7 +5048,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
 
     private static string[] LoadAutoFightStrategies()
     {
-        var folder = Global.Absolute(@"User\AutoFight");
+        var folder = UserPathProvider.CombatScriptsRoot;
         Directory.CreateDirectory(folder);
         var list = Directory.GetFiles(folder, "*.txt", SearchOption.AllDirectories)
             .Select(file => file.Replace(folder, string.Empty).Replace(".txt", string.Empty).TrimStart('\\'))
@@ -5047,7 +5059,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
 
     private static string[] LoadTcgStrategies()
     {
-        var folder = Global.Absolute(@"User\AutoGeniusInvokation");
+        var folder = UserPathProvider.TcgScriptsRoot;
         Directory.CreateDirectory(folder);
         return Directory.GetFiles(folder, "*.txt", SearchOption.AllDirectories)
             .Select(file => file.Replace(folder, string.Empty).Replace(".txt", string.Empty).TrimStart('\\'))
@@ -5601,7 +5613,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             return false;
         }
 
-        var folder = Path.GetFullPath(Global.Absolute(@"User\ScriptGroup"));
+        var folder = Path.GetFullPath(UserPathProvider.ScriptGroupRoot);
         var candidate = Path.GetFullPath(Path.Combine(folder, $"{normalizedName}.json"));
         if (!IsSubPathOf(folder, candidate))
         {
@@ -5630,7 +5642,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
     {
         try
         {
-            var folder = Global.Absolute(@"User\ScriptGroup");
+            var folder = UserPathProvider.ScriptGroupRoot;
             if (!Directory.Exists(folder))
             {
                 return Array.Empty<ScriptGroupInfo>();
@@ -5643,7 +5655,12 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             {
                 try
                 {
-                    var json = File.ReadAllText(file);
+                    var json = UserFileService.ReadAllTextIfExists(file);
+                    if (string.IsNullOrWhiteSpace(json))
+                    {
+                        continue;
+                    }
+
                     var group = ScriptGroup.FromJson(json);
                     list.Add(new ScriptGroupInfo
                     {
@@ -5683,7 +5700,13 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
                 return null;
             }
 
-            var json = File.ReadAllText(file);
+            var json = UserFileService.ReadAllTextIfExists(file);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                error = "配置组文件为空";
+                return null;
+            }
+
             return ScriptGroup.FromJson(json);
         }
         catch (Exception ex)
@@ -5695,7 +5718,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
 
     private static void SaveScriptGroup(ScriptGroup group)
     {
-        var folder = Global.Absolute(@"User\ScriptGroup");
+        var folder = UserPathProvider.ScriptGroupRoot;
         Directory.CreateDirectory(folder);
         ScriptGroup.ResetGroupInfo(group);
         if (!TryGetScriptGroupFilePath(group.Name, out var file, out var error))
@@ -5703,7 +5726,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             throw new InvalidOperationException(error ?? "配置组名称非法");
         }
 
-        File.WriteAllText(file, group.ToJson());
+        UserFileService.WriteAllText(file, group.ToJson());
     }
 
     private static void ReindexProjects(ScriptGroup group)
@@ -5843,7 +5866,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
         var keymouse = new List<ScriptLibraryItem>();
         try
         {
-            var folder = Global.Absolute(@"User\KeyMouseScript");
+            var folder = UserPathProvider.KeyMouseScriptsRoot;
             Directory.CreateDirectory(folder);
             var files = Directory.GetFiles(folder, "*.*", SearchOption.AllDirectories);
             foreach (var file in files)
@@ -6746,7 +6769,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
                 continue;
             }
 
-            var path = Path.Combine(Global.Absolute(@"User\I18n"), $"{cultureName}.json");
+            var path = Path.Combine(UserPathProvider.I18nRoot, $"{cultureName}.json");
             if (!File.Exists(path))
             {
                 continue;
@@ -6754,7 +6777,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
 
             try
             {
-                var json = File.ReadAllText(path, Encoding.UTF8);
+                var json = UserFileService.ReadAllTextIfExists(path, Encoding.UTF8) ?? string.Empty;
                 var rawMap = JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new Dictionary<string, string>();
                 var map = new Dictionary<string, string>(rawMap.Count, StringComparer.Ordinal);
                 foreach (var (key, value) in rawMap)
@@ -8139,7 +8162,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             return;
         }
 
-        var root = Path.GetFullPath(Global.ScriptPath());
+        var root = Path.GetFullPath(UserPathProvider.JsScriptsRoot);
         var candidate = Path.GetFullPath(Path.Combine(root, folder));
         if (!IsSubPathOf(root, candidate))
         {
@@ -8180,7 +8203,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             return;
         }
 
-        var root = Path.GetFullPath(Global.ScriptPath());
+        var root = Path.GetFullPath(UserPathProvider.JsScriptsRoot);
         var candidate = Path.GetFullPath(Path.Combine(root, folder));
         if (!IsSubPathOf(root, candidate))
         {
@@ -8285,7 +8308,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
 
     private async Task HandleKeyMouseLibraryAsync(HttpListenerRequest request, HttpListenerResponse response, CancellationToken ct)
     {
-        var root = Global.Absolute(@"User\KeyMouseScript");
+        var root = UserPathProvider.KeyMouseScriptsRoot;
         Directory.CreateDirectory(root);
         var files = Directory.GetFiles(root, "*.json", SearchOption.AllDirectories)
             .Select(file =>
@@ -8368,7 +8391,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             return;
         }
 
-        var root = Path.GetFullPath(Global.Absolute(@"User\KeyMouseScript"));
+        var root = Path.GetFullPath(UserPathProvider.KeyMouseScriptsRoot);
         var candidate = Path.GetFullPath(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));
         if (!IsSubPathOf(root, candidate) || !File.Exists(candidate))
         {
@@ -8377,7 +8400,14 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             return;
         }
 
-        var json = await File.ReadAllTextAsync(candidate, ct);
+        var json = UserFileService.ReadAllTextIfExists(candidate);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            response.StatusCode = (int)HttpStatusCode.BadRequest;
+            await WriteJsonAsync(response, new { error = "Invalid path" }, ct);
+            return;
+        }
+
         StartBackgroundTask(() => KeyMouseMacroPlayer.PlayMacro(json, CancellationContext.Instance.Cts.Token));
         await WriteJsonAsync(response, new { ok = true }, ct);
     }
@@ -8392,7 +8422,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             return;
         }
 
-        var root = Path.GetFullPath(Global.Absolute(@"User\KeyMouseScript"));
+        var root = Path.GetFullPath(UserPathProvider.KeyMouseScriptsRoot);
         var candidate = Path.GetFullPath(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));
         if (!IsSubPathOf(root, candidate))
         {
@@ -8427,7 +8457,7 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             return;
         }
 
-        var root = Path.GetFullPath(Global.Absolute(@"User\KeyMouseScript"));
+        var root = Path.GetFullPath(UserPathProvider.KeyMouseScriptsRoot);
         var candidate = Path.GetFullPath(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));
         if (!IsSubPathOf(root, candidate) || !File.Exists(candidate))
         {
@@ -8461,10 +8491,10 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
         if (GlobalKeyMouseRecord.Instance.Status == KeyMouseRecorderStatus.Recording)
         {
             var macro = GlobalKeyMouseRecord.Instance.StopRecord();
-            var root = Global.Absolute(@"User\KeyMouseScript");
+            var root = UserPathProvider.KeyMouseScriptsRoot;
             Directory.CreateDirectory(root);
             fileName = $"BetterGI_GCM_{DateTime.Now:yyyyMMddHHmmssffff}.json";
-            await File.WriteAllTextAsync(Path.Combine(root, fileName), macro, ct);
+            UserFileService.WriteAllText(Path.Combine(root, fileName), macro);
         }
 
         await WriteJsonAsync(response, new { ok = true, fileName }, ct);
@@ -8535,13 +8565,13 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             var candidate = Path.Combine(baseDir, "Service", "Remote", "WebRemoteLogin.html");
             if (File.Exists(candidate))
             {
-                return File.ReadAllText(candidate, Encoding.UTF8);
+                return UserFileService.ReadAllTextIfExists(candidate, Encoding.UTF8) ?? WebLoginHtml;
             }
 
             candidate = Path.Combine(baseDir, "WebRemoteLogin.html");
             if (File.Exists(candidate))
             {
-                return File.ReadAllText(candidate, Encoding.UTF8);
+                return UserFileService.ReadAllTextIfExists(candidate, Encoding.UTF8) ?? WebLoginHtml;
             }
         }
         catch
@@ -8559,13 +8589,13 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             var candidate = Path.Combine(baseDir, "Service", "Remote", "WebRemoteIndex.html");
             if (File.Exists(candidate))
             {
-                return File.ReadAllText(candidate, Encoding.UTF8);
+                return UserFileService.ReadAllTextIfExists(candidate, Encoding.UTF8) ?? WebIndexHtml;
             }
 
             candidate = Path.Combine(baseDir, "WebRemoteIndex.html");
             if (File.Exists(candidate))
             {
-                return File.ReadAllText(candidate, Encoding.UTF8);
+                return UserFileService.ReadAllTextIfExists(candidate, Encoding.UTF8) ?? WebIndexHtml;
             }
         }
         catch
@@ -8583,13 +8613,13 @@ internal sealed class WebRemoteService : IHostedService, IDisposable
             var candidate = Path.Combine(baseDir, "Service", "Remote", "WebRemoteAutomation.html");
             if (File.Exists(candidate))
             {
-                return File.ReadAllText(candidate, Encoding.UTF8);
+                return UserFileService.ReadAllTextIfExists(candidate, Encoding.UTF8) ?? WebAutomationHtml;
             }
 
             candidate = Path.Combine(baseDir, "WebRemoteAutomation.html");
             if (File.Exists(candidate))
             {
-                return File.ReadAllText(candidate, Encoding.UTF8);
+                return UserFileService.ReadAllTextIfExists(candidate, Encoding.UTF8) ?? WebAutomationHtml;
             }
         }
         catch

@@ -1520,7 +1520,7 @@ public partial class ScriptControlViewModel : ViewModel
 
     // private Dictionary<string, List<FileInfo>> LoadAllPathingScripts()
     // {
-    //     var folder = Global.Absolute(@"User\AutoPathing");
+    //     var folder = UserPathProvider.PathingScriptsRoot;
     //     var directories = Directory.GetDirectories(folder);
     //     var result = new Dictionary<string, List<FileInfo>>();
     //

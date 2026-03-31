@@ -30,7 +30,7 @@ public class ScriptProject
             throw new ArgumentException("脚本文件夹名称不能为空", nameof(folderName));
         }
 
-        var scriptRoot = Path.GetFullPath(Global.ScriptPath());
+        var scriptRoot = Path.GetFullPath(UserPathProvider.JsScriptsRoot);
         var candidatePath = Path.GetFullPath(Path.Combine(scriptRoot, folderName));
         if (!IsSubPathOf(scriptRoot, candidatePath))
         {
@@ -49,7 +49,9 @@ public class ScriptProject
             throw new FileNotFoundException("manifest.json文件不存在，请确认此脚本是JS脚本类型。" + ManifestFile);
         }
 
-        Manifest = Manifest.FromJson(File.ReadAllText(ManifestFile));
+        var manifestJson = UserFileService.ReadAllTextIfExists(ManifestFile)
+            ?? throw new FileNotFoundException("manifest.json文件读取失败，请确认此脚本是JS脚本类型。" + ManifestFile);
+        Manifest = Manifest.FromJson(manifestJson);
         Manifest.Validate(ProjectPath);
     }
 

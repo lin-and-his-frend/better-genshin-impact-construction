@@ -1,9 +1,0 @@
-D:\Users\admin\Desktop\bgi项目\原版\better-genshin-impact-construction\BetterGenshinImpact\BetterGenshinImpact.csproj : warning NU1902: Package 'MimeKit' 4.15.0 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-g7hc-96xr-gvvx
-
-生成失败。
-
-D:\Users\admin\Desktop\bgi项目\原版\better-genshin-impact-construction\BetterGenshinImpact\BetterGenshinImpact.csproj : warning NU1902: Package 'MimeKit' 4.15.0 has a known moderate severity vulnerability, https://github.com/advisories/GHSA-g7hc-96xr-gvvx
-    1 个警告
-    0 个错误
-
-已用时间 00:00:01.98

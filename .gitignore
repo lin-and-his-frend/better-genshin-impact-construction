@@ -19,12 +19,17 @@ bld/
 [Bb]in/
 [Oo]bj/
 [Ll]og/
+*.log
+.merge_file_*
 
 # Mine
 Tmp/
 /packages/
 node_modules/
 github_actions_cache/
+.dotnet/
+.dotnet-cli/
+.dotnet-cli-home/
 
 *.zip
 
